@@ -9,6 +9,7 @@ PyJWT
 python-multipart
 pandas
 pandas
+pandas
 numpy
 pandas
 scikit-learn
