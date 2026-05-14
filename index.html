@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>세이프티 루트 - 안심 귀가 서비스</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+    <script>
+        if (typeof axios === 'undefined') {
+            window.axios = { post: () => Promise.resolve({ data: { reply: '서버 연결에 실패했습니다.' } }) };
+        }
+    </script>
+</head>
+<body>
+    <div id="app">
+        <!-- Mock Push Notification -->
+        <div id="push-notification" class="push-notification hidden">
+            <div class="push-content">
+                <div class="push-header">
+                    <span class="push-app-icon"><i class="bi bi-shield-fill-check"></i></span>
+                    <span class="push-app-name">세이프티 루트</span>
+                    <span class="push-time">지금</span>
+                </div>
+                <div class="push-body">
+                    <div class="push-title">안심 통화 연결 중</div>
+                    <div class="push-text"><span class="caller-name">보호자</span>님으로부터 곧 전화가 도착합니다.</div>
+                </div>
+            </div>
+        </div>
+        <!-- 메인 뷰 컨테이너들 -->
+        
+        <!-- 1. 홈 탭 -->
+        <div id="view-home" class="view-container active">
+            <header class="view-header">
+                <h1>홈</h1>
+            </header>
+            <div class="view-content">
+                <div class="safety-summary-card">
+                    <span class="card-label">현재 내 주변 안전도</span>
+                    <div class="safety-status">
+                        <span class="status-icon"><i class="bi bi-shield-check"></i></span>
+                        <span id="home-safety-level" class="status-value">확인 중...</span>
+                    </div>
+                    <div class="current-location" style="margin-top: 12px; font-size: 14px; color: var(--ios-gray); display: flex; align-items: center; gap: 4px;">
+                        <i class="bi bi-geo-alt"></i>
+                        <span id="home-current-location">위치 확인 중...</span>
+                    </div>
+                </div>
+                
+                <div class="quick-actions">
+                    <button id="home-sos-btn" class="sos-block-btn">
+                        <span class="icon"><i class="bi bi-exclamation-triangle-fill"></i></span>
+                        <span class="label">긴급 SOS 호출</span>
+                    </button>
+                </div>
+
+                <div class="section-title">최근 방문지</div>
+                <div class="favorites-list">
+                    <div class="favorite-item">
+                        <span class="fav-icon"><i class="bi bi-house-door-fill"></i></span>
+                        <div class="fav-info">
+                            <span class="fav-name">우리집</span>
+                            <span class="fav-addr">서울시 강남구...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 지도 탭 -->
+        <div id="view-map" class="view-container">
+            <header class="top-bar">
+                <div class="location-card">
+                    <span class="location-dot"></span>
+                    <span id="current-location">현재 위치를 확인 중입니다...</span>
+                </div>
+            </header>
+            <main id="map-container">
+                <div id="map"></div>
+            </main>
+            <button id="sos-btn" class="fab-btn">SOS</button>
+            <div class="map-legend">
+                <div class="legend-item"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjNDQ0IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjAuNSIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMCA1YTIgMiAwIDAgMSAyLTJoNy41YTIgMiAwIDAgMSAxLjk4MyAxLjczOGwzLjExLTEuMzgyQTEgMSAwIDAgMSAxNiA0LjI2OXY3LjQ2MmExIDEgMCAwIDEtMS40MDYuOTEzbC0zLjExMS0xLjM4MkEyIDIgMCAwIDEgOS41IDEzSDJhMiAyIDAgMCAxLTItMnoiLz48L3N2Zz4=" alt="CCTV"><span>안심 CCTV</span></div>
+                <div class="legend-item"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjMDA3QUZGIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjAuNSIgZD0iTTUuMDcyLjU2QzYuMTU3LjI2NSA3LjMxIDAgOCAwczEuODQzLjI2NSAyLjkyOC41NmMxLjExLjMgMi4yMjkuNjU1IDIuODg3Ljg3YTEuNTQgMS41NCAwIDAgMSAxLjA0NCAxLjI2MmMuNTk2IDQuNDc3LS43ODcgNy43OTUtMi40NjUgOS45OWExMS44IDExLjggMCAwIDEtMi41MTcgMi40NTMgNy4yIDcuMiAwIDAgMS0xLjA0OC42MjVjLS4yOC4xMzItLjU4MS4yNC0uODI5LjI0cy0uNTQ4LS4xMDgtLjgyOS0uMjRhNy4yIDcuMiAwIDAgMS0xLjA0OC0uNjI1IDExLjggMTEuOCAwIDAgMS0yLjUxNy0yLjQ1M0MxLjkyOCAxMC40NjMuNTQ1IDcuMTQ1IDEuMTQxIDIuNjkyQTEuNTQgMS41NCAwIDAgMSAyLjE4NSAxLjQzIDYzIDYzIDAgMCAxIDUuMDcyLjU2Ii8+PC9zdmc+" alt="Police"><span>파출소</span></div>
+                <div class="legend-item"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjRkYzQjMwIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjAuNSIgZD0iTTcuMjkzIDEuNWExIDEgMCAwIDEgMS40MTQgMGw2LjY0NyA2LjY0NmEuNS41IDAgMCAxLS43MDguNzA4TDggMi4yMDcgMS4zNTQgOC44NTRhLjUuNSAwIDEgMS0uNzA4LS43MDh6Ii8+PHBhdGggZmlsbD0iI0ZGM0IzMCIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIwLjUiIGQ9Ik04LjcwNyAxLjVhMSAxIDAgMCAwLTEuNDE0IDBMLjY0NiA4LjE0NmEuNS41IDAgMCAwIC43MDguNzA4TDIgOC4yMDdWMTMuNWExLjUgMS41IDAgMCAwIDEuNSAxLjVoOWExLjUgMS41IDAgMCAwIDEuNS0xLjVWOC4yMDdsLjY0Ni42NDdhLjUuNSAwIDAgMCAuNzA4LS43MDh6TTggNi45ODJDOS42NjQgNS4zMDkgMTMuODI1IDguMjM2IDggMTIgMi4xNzUgOC4yMzYgNi4zMzYgNS4zMTAgOCA2Ljk4MiIvPjwvc3ZnPg==" alt="Store"><span>지킴이집</span></div>
+            </div>
+            <section class="bottom-sheet">
+                <div class="drag-handle"></div>
+                <div class="status-info">
+                    <div class="safety-indicator">
+                        <span class="label">지역 안전도</span>
+                        <span class="value" id="safety-level">보통</span>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="start-return-btn" class="primary-btn">안심 귀가 시작</button>
+                    <button id="sheet-sos-btn" class="primary-btn sos-btn-large">긴급 SOS 요청</button>
+                </div>
+            </section>
+        </div>
+
+        <!-- 3. 안심통화 탭 -->
+        <div id="view-safecall" class="view-container">
+            <header class="view-header">
+                <h1>안심통화</h1>
+            </header>
+            <div class="view-content">
+                <div class="safecall-setup-card">
+                    <div class="setup-section">
+                        <label>상대 성별</label>
+                        <div class="chip-group" data-type="gender">
+                            <button class="chip active" data-value="male">남성</button>
+                            <button class="chip" data-value="female">여성</button>
+                        </div>
+                    </div>
+                    <div class="setup-section">
+                        <label>연령대</label>
+                        <div class="chip-group" data-type="age">
+                            <button class="chip active" data-value="20">20대</button>
+                            <button class="chip" data-value="30">30대</button>
+                            <button class="chip" data-value="40">40대</button>
+                            <button class="chip" data-value="50">50대+</button>
+                        </div>
+                    </div>
+                    <div class="setup-section">
+                        <label>관계</label>
+                        <div class="chip-group" data-type="relation">
+                            <button class="chip active" data-value="아빠">아빠</button>
+                            <button class="chip" data-value="엄마">엄마</button>
+                            <button class="chip" data-value="친구">친구</button>
+                            <button class="chip" data-value="오빠">오빠</button>
+                        </div>
+                    </div>
+                    <button id="start-call-btn" class="primary-btn call-trigger-btn">
+                        <span class="icon"><i class="bi bi-telephone-fill"></i></span> 안심 통화 시작하기
+                    </button>
+                </div>
+
+                <div class="chat-integration-area">
+                    <div class="section-title">AI 대화 설정 (선택)</div>
+                    <div id="chat-messages" class="chat-messages small">
+                        <div class="msg ai">누구와 통화하고 싶으신가요? 위 버튼을 누르거나 직접 입력하세요.</div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-input" placeholder="직접 입력...">
+                        <button id="chat-send-btn"><i class="bi bi-send-fill"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 설정 탭 -->
+        <div id="view-settings" class="view-container">
+            <header class="view-header">
+                <h1>설정</h1>
+            </header>
+            <div class="view-content">
+                <div class="section-title">계정 설정</div>
+                <div class="settings-group">
+                    <div id="user-profile-section" class="settings-item hidden">
+                        <div class="user-info-card">
+                            <img id="user-picture" src="" alt="Profile" style="width: 40px; height: 40px; border-radius: 50%; margin-right: 12px;">
+                            <div class="info">
+                                <span id="user-name" class="name">사용자</span>
+                                <span id="user-email" class="desc">user@example.com</span>
+                            </div>
+                            <button id="logout-btn" class="text-btn">로그아웃</button>
+                        </div>
+                    </div>
+                    <div id="login-section" class="settings-item" style="padding: 20px; align-items: center;">
+                        <p style="font-size: 14px; color: var(--ios-gray); margin-bottom: 15px; text-align: center;">로그인하여 개인화된 서비스를 이용해 보세요.</p>
+                        <div id="google-login-btn"></div>
+                    </div>
+                </div>
+
+                <div id="personalized-settings-placeholder" class="settings-group" style="padding: 20px; text-align: center;">
+                    <p style="font-size: 14px; color: var(--ios-gray);">로그인하시면 익숙한 주소와 긴급 연락처를 관리할 수 있습니다.</p>
+                </div>
+
+                <div id="personalized-settings" class="hidden">
+                    <div class="section-title">
+                        익숙한 주소 
+                        <button id="add-place-btn" class="add-btn-small"><i class="bi bi-plus-lg"></i> 추가</button>
+                    </div>
+                    <div id="frequent-places-list" class="settings-group-list">
+                        <!-- 동적 추가 예정 -->
+                    </div>
+
+                    <div class="section-title">
+                        긴급 연락처 
+                        <button id="add-contact-btn" class="add-btn-small"><i class="bi bi-plus-lg"></i> 추가</button>
+                    </div>
+                    <div id="emergency-contacts-list" class="settings-group-list">
+                        <!-- 동적 추가 예정 -->
+                    </div>
+                </div>
+
+                <div class="section-title">알림 설정</div>
+                <div class="settings-group">
+                    <div class="settings-item toggle">
+                        <div class="info">
+                            <span class="name">새로운 지역 진입</span>
+                            <span class="desc">처음 방문하는 지역에 들어갈 때</span>
+                        </div>
+                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                    </div>
+                    <div class="settings-item toggle">
+                        <div class="info">
+                            <span class="name">위험지역 근처</span>
+                            <span class="desc">범죄 위험 지역에 접근 할 때</span>
+                        </div>
+                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                    </div>
+                    <div class="settings-item toggle">
+                        <div class="info">
+                            <span class="name">안전도착 확인</span>
+                            <span class="desc">익숙한 주소에 도착했을 때</span>
+                        </div>
+                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                    </div>
+                    <div class="settings-item toggle">
+                        <div class="info">
+                            <span class="name">야간 시간대 추천</span>
+                            <span class="desc">밤 9시 이후 안심 귀가 모드 권장</span>
+                        </div>
+                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단 네비게이션 바 -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-tab="home">
+                <span class="icon"><i class="bi bi-house-door-fill"></i></span>
+                <span class="label">홈</span>
+            </button>
+            <button class="nav-item" data-tab="map">
+                <span class="icon"><i class="bi bi-map-fill"></i></span>
+                <span class="label">지도</span>
+            </button>
+            <button class="nav-item" data-tab="safecall">
+                <span class="icon"><i class="bi bi-telephone-fill"></i></span>
+                <span class="label">안심통화</span>
+            </button>
+            <button class="nav-item" data-tab="settings">
+                <span class="icon"><i class="bi bi-gear-fill"></i></span>
+                <span class="label">설정</span>
+            </button>
+        </nav>
+
+        <!-- 공통 가짜 통화 모달 -->
+        <div id="call-modal" class="modal-overlay hidden">
+            <div id="incoming-call" class="call-screen">
+                <div class="call-bg"></div>
+                <div class="caller-info">
+                    <h2 class="caller-name">아빠</h2>
+                    <p class="call-type">세이프티 루트 안심 통화</p>
+                </div>
+                <div class="call-actions">
+                    <button id="decline-btn" class="circle-btn decline"><span class="icon"><i class="bi bi-x-lg"></i></span><span class="label">거절</span></button>
+                    <button id="accept-btn" class="circle-btn accept"><span class="icon"><i class="bi bi-telephone-fill"></i></span><span class="label">응답</span></button>
+                </div>
+            </div>
+            <div id="active-call" class="call-screen hidden">
+                <div class="call-bg"></div>
+                <div class="caller-info">
+                    <h2 class="caller-name">아빠</h2>
+                    <p id="call-timer" class="call-type">00:01</p>
+                </div>
+                <div id="script-guide" class="script-guide">
+                    <p class="guide-label">나의 대본 (추천)</p>
+                    <p id="user-line" class="user-line">전화를 받으면 대본이 나타납니다.</p>
+                </div>
+                <div class="active-call-grid">
+                    <div class="grid-item"><button class="circle-btn-small"><i class="bi bi-mic-mute-fill"></i><span>음소거</span></button></div>
+                    <div class="grid-item"><button class="circle-btn-small"><i class="bi bi-grid-3x3-gap-fill"></i><span>키패드</span></button></div>
+                    <div class="grid-item"><button class="circle-btn-small"><i class="bi bi-volume-up-fill"></i><span>스피커</span></button></div>
+                    <div class="grid-item"><button class="circle-btn-small"><i class="bi bi-person-plus-fill"></i><span>통화 추가</span></button></div>
+                    <div class="grid-item"><button class="circle-btn-small"><i class="bi bi-camera-video-fill"></i><span>FaceTime</span></button></div>
+                    <div class="grid-item"><button class="circle-btn-small"><i class="bi bi-person-lines-fill"></i><span>연락처</span></button></div>
+                </div>
+                <div class="call-actions">
+                    <button id="end-call-btn" class="circle-btn end"><span class="icon"><i class="bi bi-telephone-fill"></i></span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js?v=1.4"></script>
+</body>
+</html>
