@@ -9,4 +9,6 @@ PyJWT
 python-multipart
 pandas
 scikit-learn
+pandas
+scikit-learn
 numpy
