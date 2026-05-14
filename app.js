@@ -336,6 +336,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const userPictureEl = document.getElementById('user-picture');
     const logoutBtn = document.getElementById('logout-btn');
 
+    // --- Address Search Layer Logic ---
+    const addressSearchLayer = document.getElementById('address-search-layer');
+    const addressSearchContainer = document.getElementById('address-search-container');
+    const closeAddressLayerBtn = document.getElementById('close-address-layer');
+
+    const openAddressSearch = (onComplete) => {
+        addressSearchLayer.classList.remove('hidden');
+        addressSearchContainer.innerHTML = '';
+        
+        new daum.Postcode({
+            oncomplete: function(data) {
+                onComplete(data.roadAddress || data.address);
+                addressSearchLayer.classList.add('hidden');
+            },
+            width: '100%',
+            height: '100%'
+        }).embed(addressSearchContainer);
+    };
+
+    closeAddressLayerBtn.addEventListener('click', () => {
+        addressSearchLayer.classList.add('hidden');
+    });
+
     const updateAuthUI = (user) => {
         const personalizedSettings = document.getElementById('personalized-settings');
         const personalizedPlaceholder = document.getElementById('personalized-settings-placeholder');
@@ -399,52 +422,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const createPlaceCard = (place = { id: null, name: '', address: '' }) => {
         const card = document.createElement('div');
         card.className = 'settings-item-card';
-        card.innerHTML = `
-            <div class="settings-item-header">
-                <span class="title">${place.name || '새 장소'}</span>
-                ${place.id ? `<button class="delete-btn-text" data-id="${place.id}">삭제</button>` : ''}
-            </div>
-            <div class="settings-item-body">
-                <div class="settings-input-row">
-                    <label>장소 이름</label>
-                    <input type="text" class="input-name" value="${place.name}" placeholder="예: 우리집, 회사">
+
+        const renderViewMode = () => {
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: 600; font-size: 15px; color: #333; margin-bottom: 4px;">${place.name}</div>
+                        <div style="font-size: 13px; color: var(--ios-gray);">${place.address}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="edit-btn-text">수정</button>
+                        <button class="delete-btn-text" data-id="${place.id}">삭제</button>
+                    </div>
                 </div>
-                <div class="settings-input-row">
-                    <label>주소</label>
-                    <input type="text" class="input-address" value="${place.address}" placeholder="클릭하여 주소 검색" readonly>
-                </div>
-                <button class="save-btn-small">${place.id ? '수정' : '저장'}</button>
-            </div>
-        `;
+            `;
 
-        const addressInput = card.querySelector('.input-address');
-        addressInput.addEventListener('click', () => {
-            new daum.Postcode({
-                oncomplete: function(data) {
-                    // 도로명 주소 또는 지번 주소를 선택한 값으로 설정
-                    addressInput.value = data.roadAddress || data.address;
-                }
-            }).open();
-        });
-
-        const saveBtn = card.querySelector('.save-btn-small');
-        saveBtn.addEventListener('click', async () => {
-            const name = card.querySelector('.input-name').value;
-            const address = card.querySelector('.input-address').value;
-            if (!name || !address) return alert('이름과 주소를 모두 입력해주세요.');
-            
-            try {
-                await axios.post('/api/settings/frequent-places', { name, address });
-                alert('저장되었습니다.');
-                loadSettings();
-            } catch (error) {
-                alert('저장에 실패했습니다.');
-            }
-        });
-
-        const delBtn = card.querySelector('.delete-btn-text');
-        if (delBtn) {
-            delBtn.addEventListener('click', async () => {
+            card.querySelector('.edit-btn-text').addEventListener('click', renderEditMode);
+            card.querySelector('.delete-btn-text').addEventListener('click', async () => {
                 if (!confirm('정말 삭제하시겠습니까?')) return;
                 try {
                     await axios.delete(`/api/settings/frequent-places/${place.id}`);
@@ -453,6 +447,61 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert('삭제에 실패했습니다.');
                 }
             });
+        };
+
+        const renderEditMode = () => {
+            card.innerHTML = `
+                <div class="settings-item-header">
+                    <span class="title">${place.id ? '장소 수정' : '새 장소'}</span>
+                </div>
+                <div class="settings-item-body">
+                    <div class="settings-input-row">
+                        <label>장소 이름</label>
+                        <input type="text" class="input-name" value="${place.name}" placeholder="예: 우리집, 회사">
+                    </div>
+                    <div class="settings-input-row">
+                        <label>주소</label>
+                        <input type="text" class="input-address" value="${place.address}" placeholder="클릭하여 주소 검색" readonly>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+                        ${place.id ? '<button class="cancel-btn-text">취소</button>' : ''}
+                        <button class="save-btn-small">저장</button>
+                    </div>
+                </div>
+            `;
+
+            if (place.id) {
+                card.querySelector('.cancel-btn-text').addEventListener('click', renderViewMode);
+            }
+
+            const addressInput = card.querySelector('.input-address');
+            addressInput.addEventListener('click', () => {
+                openAddressSearch((selectedAddress) => {
+                    addressInput.value = selectedAddress;
+                });
+            });
+
+            card.querySelector('.save-btn-small').addEventListener('click', async () => {
+                const name = card.querySelector('.input-name').value.trim();
+                const address = card.querySelector('.input-address').value.trim();
+                if (!name || !address) return alert('이름과 주소를 모두 입력해주세요.');
+                
+                try {
+                    // 서버 API는 항상 POST로 새 장소를 추가하거나, PUT이 있다면 수정할 수 있음
+                    // 여기서는 기존 코드에 맞춰 POST로 처리 (서버 API 명세 확인 필요)
+                    await axios.post('/api/settings/frequent-places', { name, address });
+                    alert('저장되었습니다.');
+                    loadSettings();
+                } catch (error) {
+                    alert('저장에 실패했습니다.');
+                }
+            });
+        };
+
+        if (place.id) {
+            renderViewMode();
+        } else {
+            renderEditMode();
         }
         return card;
     };

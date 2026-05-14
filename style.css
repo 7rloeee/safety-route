@@ -732,6 +732,15 @@ input:checked + .slider:before { transform: translateX(20px); }
     cursor: pointer;
 }
 
+.edit-btn-text {
+    background: none;
+    border: none;
+    color: var(--ios-blue);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
 .save-btn-small {
     background: var(--ios-blue);
     color: #fff;
@@ -742,5 +751,48 @@ input:checked + .slider:before { transform: translateX(20px); }
     font-weight: 600;
     cursor: pointer;
     align-self: flex-end;
+}
+
+.cancel-btn-text {
+    background: none;
+    border: none;
+    color: var(--ios-gray);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+/* Address Search Layer */
+#address-search-layer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    background: #fff;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+}
+
+.address-layer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--ios-light-gray);
+    background: #fff;
+}
+
+.address-layer-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+#address-search-container {
+    flex: 1;
+    width: 100%;
+    overflow-y: auto;
 }
 
