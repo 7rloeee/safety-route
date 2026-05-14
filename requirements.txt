@@ -7,3 +7,5 @@ python-dotenv
 google-genai
 PyJWT
 python-multipart
+pandas
+numpy
