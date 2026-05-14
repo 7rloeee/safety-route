@@ -5,10 +5,9 @@ sqlalchemy
 pydantic
 python-dotenv
 google-genai
-PyJWT
+python-jose[cryptography]
+google-auth
 python-multipart
-pandas
-scikit-learn
 pandas
 scikit-learn
 numpy
