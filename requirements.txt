@@ -8,12 +8,5 @@ google-genai
 PyJWT
 python-multipart
 pandas
-pandas
-pandas
-numpy
-pandas
 scikit-learn
-pandas
-scikit-learn
-pandas
 numpy
