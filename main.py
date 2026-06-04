@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from auth_utils import verify_google_token, create_access_token, decode_access_token
 from safety_algorithms import load_public_data, calculate_safety_score, generate_safe_waypoints
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import security_manager
 
 # 데이터베이스 초기화
 models.Base.metadata.create_all(bind=engine)
