@@ -13,7 +13,7 @@ import models
 from database import engine, SessionLocal, get_db
 from sqlalchemy.orm import Session
 from auth_utils import verify_google_token, create_access_token, decode_access_token
-from safety_algorithms import load_public_data, calculate_safety_score, generate_safe_waypoints
+from safety_algorithms import load_public_data, calculate_safety_score, generate_safe_waypoints, fetch_police_stations_kakao
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # 데이터베이스 초기화
@@ -306,10 +306,9 @@ if __name__ == "__main__":
 # [알고리즘 담당]
 # =================================================================
 
-# 서버가 시작될 때 팀원이 정리해 줄 CSV 파일을 읽어옵니다. 
+# 서버가 시작될 때 팀원이 정리해 줄 CSV 파일을 읽어옵니다.
 # 파일이 아직 없을 때는 safety_algorithms.py 내부 로직에 의해 임시 가짜 데이터가 담깁니다.
-SAFETY_DATA = load_public_data("public_safety_data.csv")
-
+SAFETY_DATA = load_public_data("CCTV정보_서울특별시.csv", "전국안심지킴이집표준데이터.csv")
 # API 데이터 요청 규격 정의 (Pydantic Schema)
 class CurrentLocationIn(BaseModel):
     lat: float
@@ -329,13 +328,18 @@ async def fetch_proximity_safety_score(req: CurrentLocationIn):
     최종 안전 점수와 등급('매우 안전', '보통', '주의 필요')을 반환합니다.
     """
     try:
-        analysis_result = calculate_safety_score(req.lat, req.lng, SAFETY_DATA, radius=400)
+        # 실시간 경찰서 정보 가져오기
+        police_data = fetch_police_stations_kakao(req.lat, req.lng, radius=1000)
+        combined_safety_data = SAFETY_DATA + police_data
+        
+        analysis_result = calculate_safety_score(req.lat, req.lng, combined_safety_data, radius=400)
         return {
             "status": "success",
             "score": analysis_result["score"],
             "level": analysis_result["level"],
             "lat": req.lat,
-            "lng": req.lng
+            "lng": req.lng,
+            "police_count": len(police_data)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"안전도 연산 실패: {str(e)}")
@@ -348,15 +352,23 @@ async def fetch_optimized_safe_route(req: RouteRequestIn):
     안전 인프라(CCTV, 파출소 등)를 경유하는 안심 웨이포인트 배열을 반환합니다.
     """
     try:
+        # 경로 중간 지점을 기준으로 주변 경찰서 검색 (반경 3km)
+        mid_lat = (req.start_lat + req.end_lat) / 2
+        mid_lng = (req.start_lng + req.end_lng) / 2
+        police_data = fetch_police_stations_kakao(mid_lat, mid_lng, radius=3000)
+        
+        combined_safety_data = SAFETY_DATA + police_data
+
         optimized_path = generate_safe_waypoints(
             req.start_lat, req.start_lng,
             req.end_lat, req.end_lng,
-            SAFETY_DATA
+            combined_safety_data
         )
         return {
             "status": "success",
             "total_nodes": len(optimized_path),
-            "coordinates": optimized_path
+            "coordinates": optimized_path,
+            "police_found": len(police_data)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"안심 경로 탐색 실패: {str(e)}")

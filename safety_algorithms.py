@@ -1,6 +1,8 @@
 import math
 import pandas as pd
 import heapq  # 다익스트라 구현을 위한 우선순위 큐
+import requests
+import os
 
 def haversine_distance(lat1, lng1, lat2, lng2):
     """
@@ -20,25 +22,88 @@ def haversine_distance(lat1, lng1, lat2, lng2):
     return R * c
 
 
-def load_public_data(csv_path="public_safety_data.csv"):
+def fetch_police_stations_kakao(lat, lng, radius=2000):
     """
-    공공데이터 CSV 파일을 읽어오는 함수입니다.
-    파일이 없을 때는 에러 없이 테스트할 수 있도록 임시 가짜 데이터를 반환합니다.
+    카카오 로컬 API를 사용하여 주변 경찰서/파출소/지구대 위치를 실시간으로 가져옵니다.
     """
+    api_key = os.getenv("KAKAO_REST_API_KEY")
+    if not api_key:
+        print("⚠️ 카카오 API 키가 설정되지 않아 경찰서 정보를 가져올 수 없습니다.")
+        return []
+
+    url = "https://dapi.kakao.com/v2/local/search/keyword.json"
+    headers = {"Authorization": f"KakaoAK {api_key}"}
+    params = {
+        "query": "경찰서",
+        "x": lng,
+        "y": lat,
+        "radius": radius,
+        "sort": "distance"
+    }
+
     try:
-        df = pd.read_csv(csv_path)
-        print(f"[세이프티 루트] 공공데이터 로드 성공! 데이터 개수: {len(df)}개")
-        return df.to_dict(orient="records")
-    except FileNotFoundError:
-        print(f"⚠️ 백엔드 경고: '{csv_path}' 파일이 없어 가짜 데이터로 알고리즘을 시뮬레이션합니다.")
-        return [
-            {"type": "CCTV", "lat": 37.5552, "lng": 126.9701},   # 서울역-이대역 주변 가상 좌표들
-            {"type": "CCTV", "lat": 37.5541, "lng": 126.9712},
-            {"type": "CCTV", "lat": 37.5562, "lng": 126.9461},
-            {"type": "POLICE", "lat": 37.5567, "lng": 126.9451}, # 파출소 위치
-            {"type": "STORE", "lat": 37.5560, "lng": 126.9440},  # 안심 지킴이집 편의점
-            {"type": "DANGER", "lat": 37.5555, "lng": 126.9480}, # 우회해야 할 위험 구역
-        ]
+        response = requests.get(url, headers=headers, params=params, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            police_list = []
+            for item in data.get("documents", []):
+                police_list.append({
+                    "type": "POLICE",
+                    "lat": float(item["y"]),
+                    "lng": float(item["x"]),
+                    "name": item["place_name"]
+                })
+            print(f"[카카오 API] 주변 경찰관서 {len(police_list)}개 발견")
+            return police_list
+        else:
+            print(f"⚠️ 카카오 API 호출 실패: {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"⚠️ 카카오 API 에러: {e}")
+        return []
+
+
+def load_public_data(cctv_path="CCTV정보_서울특별시.csv", store_path="전국안심지킴이집표준데이터.csv"):
+    """
+    CCTV(CSV)와 안심지킴이집(CSV) 데이터를 로드하여 통합합니다.
+    경찰서는 실시간 API 호출 방식으로 전환되었습니다.
+    """
+    combined_data = []
+    
+    # 1. CCTV 데이터 로드
+    try:
+        df_cctv = pd.read_csv(cctv_path, encoding="cp949")
+        if "WGS84위도" in df_cctv.columns and "WGS84경도" in df_cctv.columns:
+            df_cctv = df_cctv.rename(columns={"WGS84위도": "lat", "WGS84경도": "lng"})
+        df_cctv["type"] = "CCTV"
+        df_cctv = df_cctv.dropna(subset=["lat", "lng"])
+        combined_data.extend(df_cctv[["type", "lat", "lng"]].to_dict(orient="records"))
+        print(f"[데이터 로드] CCTV: {len(df_cctv)}개 완료")
+    except Exception as e:
+        print(f"⚠️ CCTV 로드 실패: {e}")
+
+    # 2. 안심지킴이집 데이터 로드
+    try:
+        try:
+            df_store = pd.read_csv(store_path, encoding="cp949")
+        except:
+            df_store = pd.read_csv(store_path, encoding="utf-8")
+            
+        if "위도" in df_store.columns and "경도" in df_store.columns:
+            df_store = df_store.rename(columns={"위도": "lat", "경도": "lng"})
+        df_store["type"] = "STORE"
+        df_store = df_store.dropna(subset=["lat", "lng"])
+        combined_data.extend(df_store[["type", "lat", "lng"]].to_dict(orient="records"))
+        print(f"[데이터 로드] 안심지킴이집: {len(df_store)}개 완료")
+    except Exception as e:
+        print(f"⚠️ 안심지킴이집 로드 실패: {e}")
+
+    # 3. 위험 구역 (임시 데이터)
+    combined_data.append({"type": "DANGER", "lat": 37.5555, "lng": 126.9480})
+
+    print(f"✅ 정적 안전 인프라 데이터 {len(combined_data)}개 로드 완료 (경찰서는 실시간 호출)")
+    return combined_data
+
 
 
 def calculate_safety_score(current_lat, current_lng, facilities_data, radius=400):
