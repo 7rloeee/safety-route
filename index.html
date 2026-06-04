@@ -60,14 +60,8 @@
                 </div>
 
                 <div class="section-title">최근 방문지</div>
-                <div class="favorites-list">
-                    <div class="favorite-item">
-                        <span class="fav-icon"><i class="bi bi-house-door-fill"></i></span>
-                        <div class="fav-info">
-                            <span class="fav-name">우리집</span>
-                            <span class="fav-addr">서울시 강남구...</span>
-                        </div>
-                    </div>
+                <div class="favorites-list" id="home-frequent-places-list">
+                    <!-- DB 데이터가 여기에 동적으로 나타납니다 -->
                 </div>
             </div>
         </div>
@@ -207,28 +201,28 @@
                             <span class="name">새로운 지역 진입</span>
                             <span class="desc">처음 방문하는 지역에 들어갈 때</span>
                         </div>
-                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                        <label class="switch"><input type="checkbox" id="noti-new-area" checked><span class="slider"></span></label>
                     </div>
                     <div class="settings-item toggle">
                         <div class="info">
                             <span class="name">위험지역 근처</span>
                             <span class="desc">범죄 위험 지역에 접근 할 때</span>
                         </div>
-                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                        <label class="switch"><input type="checkbox" id="noti-danger-zone" checked><span class="slider"></span></label>
                     </div>
                     <div class="settings-item toggle">
                         <div class="info">
                             <span class="name">안전도착 확인</span>
                             <span class="desc">익숙한 주소에 도착했을 때</span>
                         </div>
-                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                        <label class="switch"><input type="checkbox" id="noti-safe-arrival" checked><span class="slider"></span></label>
                     </div>
                     <div class="settings-item toggle">
                         <div class="info">
                             <span class="name">야간 시간대 추천</span>
                             <span class="desc">밤 9시 이후 안심 귀가 모드 권장</span>
                         </div>
-                        <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                        <label class="switch"><input type="checkbox" id="noti-night-mode" checked><span class="slider"></span></label>
                     </div>
                 </div>
             </div>
