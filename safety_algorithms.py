@@ -1,7 +1,6 @@
 import math
 import pandas as pd
-from dqn_env import SafetyMapEnv
-from dqn_agent import DQNAgent
+import heapq  # 다익스트라 구현을 위한 우선순위 큐
 
 def haversine_distance(lat1, lng1, lat2, lng2):
     """
@@ -23,17 +22,15 @@ def haversine_distance(lat1, lng1, lat2, lng2):
 
 def load_public_data(csv_path="public_safety_data.csv"):
     """
-    다른 팀원분이 정리해 줄 공공데이터 CSV 파일을 읽어오는 함수입니다.
-    파일이 아직 없을 때는 에러 없이 테스트할 수 있도록 임시 가짜 데이터를 반환합니다.
+    공공데이터 CSV 파일을 읽어오는 함수입니다.
+    파일이 없을 때는 에러 없이 테스트할 수 있도록 임시 가짜 데이터를 반환합니다.
     """
     try:
-        # 팀원이 제공할 CSV 구조 가정: columns=['lat', 'lng', 'type']
         df = pd.read_csv(csv_path)
         print(f"[세이프티 루트] 공공데이터 로드 성공! 데이터 개수: {len(df)}개")
         return df.to_dict(orient="records")
     except FileNotFoundError:
         print(f"⚠️ 백엔드 경고: '{csv_path}' 파일이 없어 가짜 데이터로 알고리즘을 시뮬레이션합니다.")
-        # 데이터 수집 전까지 내 로직을 검증하기 위한 가상 인프라 데이터셋
         return [
             {"type": "CCTV", "lat": 37.5552, "lng": 126.9701},   # 서울역-이대역 주변 가상 좌표들
             {"type": "CCTV", "lat": 37.5541, "lng": 126.9712},
@@ -49,33 +46,30 @@ def calculate_safety_score(current_lat, current_lng, facilities_data, radius=400
     [핵심 기능 1] 주변 안전도 점수 계산 알고리즘
     현재 위치 기준 반경 radius(미터) 이내의 시설물을 분석하여 0~100점 사이의 점수와 등급을 반환합니다.
     """
-    # 기획서 양식 및 인프라 가치에 맞춘 가중치 설정
     weights = {
         "CCTV": 6,       # 안심 CCTV 가점
-        "POLICE": 25,    # 파출소 가점 (가장 높은 안전지대)
+        "POLICE": 25,    # 파출소 가점
         "STORE": 10,     # 안심 지킴이집 편의점 가점
         "DANGER": -30    # 위험 구역 감점 요소
     }
     
-    base_score = 60  # 기본 점수 바탕
+    base_score = 60 
     score_modifier = 0
     
     for facility in facilities_data:
         dist = haversine_distance(current_lat, current_lng, facility["lat"], facility["lng"])
         
-        # 설정한 반경(예: 400m) 이내에 있는 시설물만 연산에 포함
         if dist <= radius:
             f_type = facility.get("type", "CCTV")
             weight = weights.get(f_type, 0)
             
-            # 거리 역비례 감쇄(Distance Decay): 시설물이 사용자와 가까울수록 영향력을 증폭시킴
+            # 거리 역비례 감쇄(Distance Decay): 가까울수록 영향력 증폭
             distance_factor = (radius - dist) / radius
             score_modifier += weight * distance_factor
 
     final_score = base_score + score_modifier
-    final_score = max(0, min(100, final_score))  # 0점과 100점 사이로 바운더리 제한
+    final_score = max(0, min(100, final_score))
     
-    # app.js 프론트 UI 텍스트 컴포넌트와 매핑
     if final_score >= 80:
         level = "매우 안전"
     elif final_score >= 45:
@@ -85,77 +79,98 @@ def calculate_safety_score(current_lat, current_lng, facilities_data, radius=400
         
     return {"score": round(final_score, 1), "level": level}
 
-def generate_safe_waypoints_with_dqn(start_lat, start_lng, end_lat, end_lng, facilities_data, model_path="safety_dqn_model.h5"):
+
+def generate_safe_waypoints(start_lat, start_lng, end_lat, end_lng, facilities_data):
     """
-    [핵심 기능 2 - DQN 활용] 안심 경로 계산 알고리즘
-    DQN 에이전트를 활용하여 위험 구역을 회피하고 안전 인프라를 경유하는 최적 안심 경로를 탐색합니다.
+    [다익스트라 알고리즘 적용] 안심 경로 탐색 함수
+    CCTV, 가로등(인프라) 등의 위치를 바탕으로 인센티브 및 패널티 가중치를 부여하여
+    가장 안전 점수가 높은(비용이 적은) 최적 우회 경로를 실시간으로 유도하여 반환합니다.
     """
-    # DQN 환경 초기화 (가상의 10x10 그리드 맵 사용)
-    env = SafetyMapEnv()
+    # 1. 그래프 탐색을 위한 정점(노드) 풀 생성
+    # 출발점, 공공데이터 인프라 목록, 도착점을 순서대로 하나의 리스트로 통합
+    nodes = [{"type": "START", "lat": start_lat, "lng": start_lng}]
+    for f in facilities_data:
+        nodes.append(f)
+    nodes.append({"type": "GOAL", "lat": end_lat, "lng": end_lng})
     
-    # DQN 에이전트 로드
-    agent = DQNAgent(env.state_size, env.action_size)
-    try:
-        agent.load(model_path)
-        print(f"[세이프티 루트] DQN 모델 로드 성공: {model_path}")
-    except Exception as e:
-        print(f"⚠️ 백엔드 경고: DQN 모델 로드 실패 ({e}). 기본 경로를 반환합니다.")
-        # 모델 로드 실패 시, 기본 직선 경로 반환
+    num_nodes = len(nodes)
+    
+    # 2. 인프라 요소별 안전 가중치 보너스/패널티 값 지정 (다익스트라는 값이 작을수록 우선 선택함)
+    facility_benefits = {
+        "CCTV": 20.0,      # 비용 차감 가점 (CCTV가 있는 골목길 우선 유도)
+        "POLICE": 60.0,    # 최고의 안전지대이므로 비용 대폭 차감 
+        "STORE": 30.0,     # 안심 지킴이집 편의점 경유 보너스
+        "DANGER": -150.0   # 위험 구역은 마이너스 보너스(=비용 급증 패널티)를 주어 절대 안 가게 우회시킴
+    }
+
+    # 3. 모든 정점(지점) 간 가중치 비용(에지) 계산하여 그래프 리스트 생성
+    graph = {i: [] for i in range(num_nodes)}
+    
+    for i in range(num_nodes):
+        for j in range(num_nodes):
+            if i == j: continue
+            
+            # 두 GPS 지점 사이의 실제 물리적 거리(m) 연산
+            dist = haversine_distance(nodes[i]["lat"], nodes[i]["lng"], nodes[j]["lat"], nodes[j]["lng"])
+            
+            # 성능 최적화: 너무 멀리 떨어진 노드끼리는 도보 이동이 불가능하다고 판단하여 간선 연결 제외 (출발/도착점 제외)
+            if dist > 800 and nodes[i]["type"] != "START" and nodes[j]["type"] != "GOAL":
+                continue
+                
+            target_type = nodes[j].get("type", "CCTV")
+            benefit = facility_benefits.get(target_type, 0.0)
+            
+            # 다익스트라 가중치 = 실제 거리 - 안전 인센티브 (위험구역은 benefit이 음수이므로 비용이 대폭 상승)
+            cost = dist - benefit
+            if cost < 1: cost = 1.0  # 다익스트라 특성상 가중치 음수 방지 예외처리
+                
+            graph[i].append((cost, j))
+
+    # 4. 다익스트라(Dijkstra) 최단/최적 경로 탐색 알고리즘 구동
+    start_index = 0
+    goal_index = num_nodes - 1
+    
+    distances = {i: float('inf') for i in range(num_nodes)}
+    distances[start_index] = 0
+    previous_nodes = {i: None for i in range(num_nodes)}  # 경로 추적용 직전 정점 저장 배열
+    
+    queue = [(0, start_index)]  # 우선순위 큐 초기화 (비용, 시작노드)
+    
+    while queue:
+        current_distance, current_node = heapq.heappop(queue)
+        
+        if current_distance > distances[current_node]: continue
+        if current_node == goal_index: break  # 목적지 연결 완료 시 연산 조기 종료
+            
+        for next_cost, neighbor in graph[current_node]:
+            distance = current_distance + next_cost
+            if distance < distances[neighbor]:
+                distances[neighbor] = distance
+                previous_nodes[neighbor] = current_node
+                heapq.heappush(queue, (distance, neighbor))
+
+    # 5. 역추적 배열을 거슬러 올라가며 최적 위경도 경로 데이터 구축
+    path_waypoints = []
+    curr = goal_index
+    while curr is not None:
+        path_waypoints.append({"lat": nodes[curr]["lat"], "lng": nodes[curr]["lng"]})
+        curr = previous_nodes[curr]
+    path_waypoints.reverse()  # 출발점부터 가도록 뒤집기
+
+    # 경로 연결 실패 예외 시 최소 기본 직선 경로 구성 반환
+    if len(path_waypoints) <= 1:
         return [{"lat": start_lat, "lng": start_lng}, {"lat": end_lat, "lng": end_lng}]
-
-    # 환경 초기화 및 시작 상태 설정
-    # 실제 위경도와 가상 그리드 맵의 시작/목표 지점 매핑이 필요하지만,
-    # 여기서는 단순화를 위해 그리드 맵의 (0,0)을 시작, (9,9)를 목표로 가정합니다.
-    # 실제 서비스에서는 GPS 좌표를 그리드 좌표로 변환하는 로직이 필요합니다.
-    state = env.reset() # (0,0)
-    
-    # 경로 저장 리스트 (그리드 좌표)
-    grid_path = [tuple(state)]
-    
-    # 최대 탐색 스텝 제한
-    max_steps = 50 
-    
-    for step_count in range(max_steps):
-        action = agent.act(state, train=False) # 학습된 AI의 판단으로만 이동
-        next_state, reward, done = env.step(action)
         
-        grid_path.append(tuple(next_state))
-        state = next_state
-        
-        if done:
-            break
+    return path_waypoints
 
-    # 그리드 경로를 실제 위경도 경로로 변환 (단순화를 위해 시작/끝점만 매핑)
-    # 실제 구현에서는 그리드 좌표를 실제 GPS 좌표로 변환하는 복잡한 로직이 필요합니다.
-    # 여기서는 시작점과 끝점, 그리고 중간에 임의의 웨이포인트를 추가하는 방식으로 시뮬레이션합니다.
-    # DQN이 찾은 그리드 경로의 중간 지점을 실제 GPS 중간 지점으로 매핑하는 방식 등을 고려할 수 있습니다.
-    return [{"lat": start_lat, "lng": start_lng}, {"lat": (start_lat + end_lat) / 2, "lng": (start_lng + end_lng) / 2}, {"lat": end_lat, "lng": end_lng}]
 
-def detect_abnormal_behavior(gps_log, safe_route_waypoints, speed_threshold=5.0, # m/s (약 18km/h)
-                             still_time_threshold=120, # seconds
-                             route_deviation_threshold=50 # meters
-                            ):
+def detect_abnormal_behavior(gps_log, safe_route_waypoints, speed_threshold=5.0, still_time_threshold=120, route_deviation_threshold=50):
     """
     실시간 GPS 데이터를 모니터링하여 사용자의 이상 행동을 감지합니다.
-    
-    Args:
-        gps_log (list): [{'timestamp': float, 'lat': float, 'lng': float}, ...] 형태의 연속된 GPS 좌표 리스트.
-                        timestamp는 epoch time (초)
-        safe_route_waypoints (list): [{'lat': float, 'lng': float}, ...] 형태의 안내된 안심 경로 웨이포인트 리스트.
-        speed_threshold (float): 갑자기 뜀을 감지하는 속도 임계값 (m/s).
-        still_time_threshold (int): 비정상적 정지를 감지하는 시간 임계값 (초).
-        route_deviation_threshold (int): 경로 이탈을 감지하는 거리 임계값 (미터).
-        
-    Returns:
-        dict: 이상 징후 종류와 위험 여부를 담은 딕셔너리.
-              예: {"type": "none", "is_abnormal": False}
-                  {"type": "sudden_run", "is_abnormal": True, "message": "갑자기 뛰는 것으로 감지되었습니다."}
     """
-    
     if len(gps_log) < 2:
         return {"type": "none", "is_abnormal": False}
 
-    # 1. 이동 속도 분석 (갑자기 뜀, 비정상적 정지)
     last_point = gps_log[-1]
     second_last_point = gps_log[-2]
 
@@ -164,25 +179,19 @@ def detect_abnormal_behavior(gps_log, safe_route_waypoints, speed_threshold=5.0,
     time_diff = last_point['timestamp'] - second_last_point['timestamp']
 
     if time_diff > 0:
-        current_speed = dist_moved / time_diff # m/s
+        current_speed = dist_moved / time_diff
         
-        # 갑자기 뜀 감지
         if current_speed > speed_threshold:
             return {"type": "sudden_run", "is_abnormal": True, "message": "갑자기 뛰는 것으로 감지되었습니다."}
         
-        # 비정상적 정지 감지 (마지막 N개 포인트가 거의 움직이지 않았을 때)
-        # 여기서는 단순화를 위해 마지막 두 포인트만 보지만, 실제로는 더 많은 과거 데이터를 봐야 함
-        if current_speed < 0.5 and time_diff >= still_time_threshold: # 0.5 m/s 이하를 정지로 간주
-            # 더 정확한 정지 감지를 위해, 일정 시간 동안의 모든 GPS 로그를 확인
+        if current_speed < 0.5 and time_diff >= still_time_threshold:
             recent_logs = [p for p in gps_log if last_point['timestamp'] - p['timestamp'] <= still_time_threshold]
             if len(recent_logs) > 1:
                 total_dist_in_still_time = haversine_distance(recent_logs[0]['lat'], recent_logs[0]['lng'],
                                                               recent_logs[-1]['lat'], recent_logs[-1]['lng'])
-                if total_dist_in_still_time < 5: # 5미터 이내 움직임은 정지로 간주
+                if total_dist_in_still_time < 5:
                     return {"type": "abnormal_still", "is_abnormal": True, "message": "장시간 비정상적으로 정지해 있습니다."}
 
-    # 2. 경로 이탈 감지
-    # 현재 위치에서 가장 가까운 안심 경로 웨이포인트까지의 거리를 계산
     min_dist_to_route = float('inf')
     for wp in safe_route_waypoints:
         min_dist_to_route = min(min_dist_to_route, haversine_distance(last_point['lat'], last_point['lng'], wp['lat'], wp['lng']))
@@ -191,7 +200,10 @@ def detect_abnormal_behavior(gps_log, safe_route_waypoints, speed_threshold=5.0,
         return {"type": "route_deviation", "is_abnormal": True, "message": "안심 경로에서 이탈했습니다."}
 
     return {"type": "none", "is_abnormal": False}
+<<<<<<< HEAD
 def generate_safe_waypoints(start_lat, start_lng, end_lat, end_lng):
     # 팀원들이 원하는 함수 이름을 내가 만든 이상 행동 감지나 경로 로직과 연결해주는 다리입니다.
     # 우선 에러를 끄고 웹사이트를 켜기 위해 임시 경로 데이터를 반환하도록 설정합니다.
     return [{"lat": start_lat, "lng": start_lng}, {"lat": end_lat, "lng": end_lng}]
+=======
+>>>>>>> origin/main

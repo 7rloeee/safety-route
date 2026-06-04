@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // UI Elements - Home View
     const homeSosBtn = document.getElementById('home-sos-btn');
+    const homeFrequentPlacesList = document.getElementById('home-frequent-places-list'); // 홈 탭의 최근 방문지 목록 엘리먼트
 
     // UI Elements - Safe Call View
     const chips = document.querySelectorAll('.chip');
@@ -30,6 +31,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let isLooping = false;
     let scriptTimeout;
 
+    // 알림 중복 발송 방지를 위한 변수
+    let lastNotifiedRegion = '';
+    let isDangerNotified = false;
+    let isArrivalNotified = false;
+
+    // 지도 객체를 여러 함수에서 공유하기 위해 상단으로 이동
+    let mapInstance;
+    let geocoderInstance;
+
     let currentCallConfig = {
         caller_name: '아빠',
         gender: 'male',
@@ -42,6 +52,22 @@ document.addEventListener('DOMContentLoaded', () => {
             {"caller": "아 진짜? 그런 일이 있었어?", "user": "그러니까, 나도 깜짝 놀랐다니까."},
             {"caller": "응, 듣고 있어. 천천히 와.", "user": "어, 지금 골목길 지나고 있어."}
         ]
+    };
+
+    // --- 알림 발송 함수 ---
+    const sendPushNotification = (title, body, toggleId) => {
+        // 1. 해당 설정이 켜져 있는지 확인
+        const isEnabled = document.getElementById(toggleId).checked;
+        if (!isEnabled) return; // 꺼져있으면 아무것도 안 함
+
+        // 2. 브라우저 알림 권한 확인 후 발송
+        if (!("Notification" in window)) return;
+        
+        if (Notification.permission === "granted") {
+            new Notification(title, { body, icon: 'https://cdn-icons-png.flaticon.com/512/1182/1182743.png' });
+        } else if (Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
     };
 
     // --- Tab Navigation Logic ---
@@ -66,6 +92,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 bottomSheet.style.display = 'block';
             } else {
                 bottomSheet.style.display = 'none';
+            }
+
+            // 홈 탭이나 설정 탭으로 이동할 때 최신 데이터를 다시 불러와 동기화합니다.
+            if ((targetTab === 'home' || targetTab === 'settings') && localStorage.getItem('token')) {
+                loadSettings();
             }
         });
     });
@@ -383,6 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             document.getElementById('frequent-places-list').innerHTML = '';
             document.getElementById('emergency-contacts-list').innerHTML = '';
+            if (homeFrequentPlacesList) homeFrequentPlacesList.innerHTML = '';
         }
     };
 
@@ -394,11 +426,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 axios.get('/api/settings/frequent-places'),
                 axios.get('/api/settings/emergency-contacts')
             ]);
+            renderHomeFrequentPlaces(placesRes.data); // 홈 탭에 최근 방문지 렌더링
             renderFrequentPlaces(placesRes.data);
             renderEmergencyContacts(contactsRes.data);
         } catch (error) {
             console.error('Failed to load settings:', error);
         }
+    };
+
+    // 홈 탭의 최근 방문지 목록을 렌더링하는 함수
+    const renderHomeFrequentPlaces = (places) => {
+        if (!homeFrequentPlacesList) return;
+        homeFrequentPlacesList.innerHTML = '';
+
+        if (places.length === 0) {
+            homeFrequentPlacesList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--ios-gray); font-size: 14px;">등록된 장소가 없습니다.</div>';
+            return;
+        }
+
+        places.forEach(place => {
+            const item = document.createElement('div');
+            item.className = 'favorite-item';
+            item.innerHTML = `
+                <span class="fav-icon"><i class="bi bi-geo-alt-fill"></i></span>
+                <div class="fav-info">
+                    <span class="fav-name">${place.name}</span>
+                    <span class="fav-addr">${place.address}</span>
+                </div>
+            `;
+            
+            // 클릭 시 지도 탭으로 이동하고 해당 주소로 지도 중심 이동
+            item.addEventListener('click', () => {
+                if (geocoderInstance && mapInstance) {
+                    geocoderInstance.addressSearch(place.address, (result, status) => {
+                        if (status === kakao.maps.services.Status.OK) {
+                            const coords = new kakao.maps.LatLng(result[0].y, result[0].x);
+                            switchTab('map'); // 지도 탭으로 이동
+                            setTimeout(() => {
+                                mapInstance.setCenter(coords);
+                                mapInstance.setLevel(3);
+                            }, 100);
+                        }
+                    });
+                }
+            });
+            homeFrequentPlacesList.appendChild(item);
+        });
     };
 
     const renderFrequentPlaces = (places) => {
@@ -693,6 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
         axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
         updateAuthUI(JSON.parse(savedUser));
     }
+    loadSettings(); // 앱 초기 로드 시에도 설정 데이터를 불러옵니다.
 
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('token');
@@ -702,8 +776,42 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('로그아웃 되었습니다.');
     });
 
+    // --- 알림 설정 초기화 (저장된 값 불러오기 및 이벤트 바인딩) ---
+    const initNotificationSettings = () => {
+        const notiIds = ['noti-new-area', 'noti-danger-zone', 'noti-safe-arrival', 'noti-night-mode'];
+        
+        notiIds.forEach(id => {
+            const cb = document.getElementById(id);
+            if (!cb) return;
+
+            // 1. 기존에 저장된 설정이 있다면 불러오기
+            const saved = localStorage.getItem(id);
+            if (saved !== null) {
+                cb.checked = (saved === 'true');
+            }
+
+            // 2. 스위치를 조작할 때마다 브라우저에 상태 저장
+            cb.addEventListener('change', () => {
+                localStorage.setItem(id, cb.checked);
+                // 켰을 때만 알림 권한 요청
+                if (cb.checked && Notification.permission === "default") {
+                    Notification.requestPermission();
+                }
+            });
+        });
+    };
+    initNotificationSettings();
+
+    // 야간 시간대 체크 (앱 실행 시 및 주기적)
+    const checkNightMode = () => {
+        const hour = new Date().getHours();
+        if (hour >= 21 || hour < 5) {
+            sendPushNotification('야간 안심 귀가', '늦은 시간입니다. 안심 귀가 모드를 시작할까요?', 'noti-night-mode');
+        }
+    };
+
     // --- Kakao Maps Logic ---
-    const API_KEY = '1d88eaa665348747e894a1849b949cf1';
+    const API_KEY = '1d88eaa665348747e894a1849b949cf1';``
     const mapScript = document.createElement('script');
     mapScript.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${API_KEY}&libraries=services&autoload=false`;
     document.head.appendChild(mapScript);
@@ -712,14 +820,14 @@ document.addEventListener('DOMContentLoaded', () => {
         kakao.maps.load(() => {
             const mapContainer = document.getElementById('map');
             const mapOption = { center: new kakao.maps.LatLng(37.5665, 126.9780), level: 3 };
-            const map = new kakao.maps.Map(mapContainer, mapOption);
-            const geocoder = new kakao.maps.services.Geocoder();
+            mapInstance = new kakao.maps.Map(mapContainer, mapOption);
+            geocoderInstance = new kakao.maps.services.Geocoder();
             let allMarkers = [];
             const infoWindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 
             const userContent = `<div class="user-marker-container"><div class="user-marker-heading"></div><div class="user-marker-dot"></div></div>`;
-            const userOverlay = new kakao.maps.CustomOverlay({ content: userContent, position: map.getCenter(), zIndex: 3 });
-            userOverlay.setMap(map);
+            const userOverlay = new kakao.maps.CustomOverlay({ content: userContent, position: mapInstance.getCenter(), zIndex: 3 });
+            userOverlay.setMap(mapInstance);
 
             const icons = {
                 CCTV: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjNDQ0IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjAuNSIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMCA1YTIgMiAwIDAgMSAyLTJoNy41YTIgMiAwIDAgMSAxLjk4MyAxLjczOGwzLjExLTEuMzgyQTEgMSAwIDAgMSAxNiA0LjI2OXY3LjQ2MmExIDEgMCAwIDEtMS40MDYuOTEzbC0zLjExMS0xLjM4MkEyIDIgMCAwIDEgOS41IDEzSDJhMiAyIDAgMCAxLTItMnoiLz48L3N2Zz4=',
@@ -739,8 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     for (let i = 0; i < f.count; i++) {
                         const pos = new kakao.maps.LatLng(lat + (Math.random() - 0.5) * 0.01, lng + (Math.random() - 0.5) * 0.01);
                         const m = new kakao.maps.Marker({ position: pos, image: new kakao.maps.MarkerImage(f.icon, new kakao.maps.Size(22, 22)), title: f.name });
-                        kakao.maps.event.addListener(m, 'click', () => { infoWindow.setContent(`<div style="padding:10px;font-size:12px;">${f.name}</div>`); infoWindow.open(map, m); });
-                        m.setMap(map);
+                        kakao.maps.event.addListener(m, 'click', () => { infoWindow.setContent(`<div style="padding:10px;font-size:12px;">${f.name}</div>`); infoWindow.open(mapInstance, m); });
+                        m.setMap(mapInstance);
                         allMarkers.push(m);
                     }
                 });
@@ -750,12 +858,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
                 const loc = new kakao.maps.LatLng(lat, lng);
-                map.panTo(loc);
+                mapInstance.panTo(loc);
                 userOverlay.setPosition(loc);
                 if (allMarkers.length === 0) generateSafetyFacilities(lat, lng);
-                geocoder.coord2Address(lng, lat, (result, status) => {
+                geocoderInstance.coord2Address(lng, lat, (result, status) => {
                     if (status === kakao.maps.services.Status.OK) {
                         const addr = result[0].address.address_name;
+                        const region = result[0].address.region_2depth_name; // 구 단위 (예: 강남구)
+
+                        // 1. 새로운 지역 진입 체크
+                        if (lastNotifiedRegion && lastNotifiedRegion !== region) {
+                            sendPushNotification('새로운 지역 진입', `${region}에 들어왔습니다. 주변 환경에 유의하세요.`, 'noti-new-area');
+                        }
+                        lastNotifiedRegion = region;
+
+                        // 2. 위험지역 근처 체크 (예시 로직: 주소에 특정 단어 포함 시)
+                        if (addr.includes('위험') && !isDangerNotified) {
+                            sendPushNotification('위험 지역 인접', '현재 범죄 주의 구역 근처입니다. 안심 통화 사용을 권장합니다.', 'noti-danger-zone');
+                            isDangerNotified = true;
+                        } else if (!addr.includes('위험')) {
+                            isDangerNotified = false;
+                        }
+
+                        // 3. 안전 도착 확인 (예시: 저장된 우리집 주소와 비교)
+                        const homeAddr = "서울시 강남구"; // 실제로는 DB에서 가져온 주소 사용
+                        if (addr.includes(homeAddr) && !isArrivalNotified) {
+                            sendPushNotification('안전 도착 확인', '목적지 주변에 도착했습니다. 모드를 종료할까요?', 'noti-safe-arrival');
+                            isArrivalNotified = true;
+                        } else if (!addr.includes(homeAddr)) {
+                            isArrivalNotified = false;
+                        }
+
                         document.getElementById('current-location').innerText = addr;
                         const homeLocEl = document.getElementById('home-current-location');
                         if (homeLocEl) homeLocEl.innerText = addr;
@@ -777,6 +910,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             };
+
+            checkNightMode(); // 맵 로드 시 야간 모드 체크
 
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition(updateLocation, console.error, { enableHighAccuracy: true });
