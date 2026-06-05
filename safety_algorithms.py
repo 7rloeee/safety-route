@@ -265,10 +265,4 @@ def detect_abnormal_behavior(gps_log, safe_route_waypoints, speed_threshold=5.0,
         return {"type": "route_deviation", "is_abnormal": True, "message": "안심 경로에서 이탈했습니다."}
 
     return {"type": "none", "is_abnormal": False}
-<<<<<<< HEAD
-def generate_safe_waypoints(start_lat, start_lng, end_lat, end_lng):
-    # 팀원들이 원하는 함수 이름을 내가 만든 이상 행동 감지나 경로 로직과 연결해주는 다리입니다.
-    # 우선 에러를 끄고 웹사이트를 켜기 위해 임시 경로 데이터를 반환하도록 설정합니다.
-    return [{"lat": start_lat, "lng": start_lng}, {"lat": end_lat, "lng": end_lng}]
-=======
->>>>>>> origin/main
+
