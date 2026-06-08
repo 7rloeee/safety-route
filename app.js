@@ -191,6 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const startSafeReturn = (destinationAddress) => {
         if (!geocoderInstance || !mapInstance) return;
 
+        // 즉시 상태 변경 (피드백 강화)
+        startReturnBtn.innerText = '안심경로 계산중...';
+        startReturnBtn.disabled = true;
+
         geocoderInstance.addressSearch(destinationAddress, async (result, status) => {
             if (status === kakao.maps.services.Status.OK) {
                 const destCoords = { lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) };
@@ -199,9 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 navigator.geolocation.getCurrentPosition(async (position) => {
                     const startCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
                     
-                    startReturnBtn.innerText = '안심 경로 탐색 중...';
-                    startReturnBtn.disabled = true;
-
                     try {
                         const response = await axios.post('/api/safety/route', {
                             start_lat: startCoords.lat,
