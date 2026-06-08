@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         // 경로 정보 표시
                         if (routeInfoCard) {
-                            routeSafetyScoreEl.innerText = `(안전도 ${response.data.safety_score}%)`;
+                            routeSafetyScoreEl.innerText = `(안전도 ${response.data.safety_score.toFixed(1)}%)`;
                             routeDistanceEl.innerText = `${(response.data.distance / 1000).toFixed(1)}km`;
                             routeTimeEl.innerText = `${response.data.time}분`;
                             routeInfoCard.classList.remove('hidden');
@@ -461,19 +461,37 @@ document.addEventListener('DOMContentLoaded', () => {
         userLineEl.innerText = "전화를 받으면 대본이 나타납니다.";
     };
 
-    // --- Web Speech API (TTS) ---
-    const speak = (text, gender) => {
-        if (!window.speechSynthesis) return;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ko-KR';
-        const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(v => v.lang === 'ko-KR' && (gender === 'male' ? v.name.includes('Male') : v.name.includes('Female'))) || voices.find(v => v.lang === 'ko-KR');
-        if (preferredVoice) utterance.voice = preferredVoice;
-        utterance.pitch = gender === 'male' ? 0.8 : 1.1;
-        window.speechSynthesis.speak(utterance);
+    // --- ElevenLabs AI TTS 연동 ---
+    const speak = async (text, gender) => {
+        try {
+            const response = await axios.post('/api/tts', { text, gender }, { responseType: 'blob' });
+            const audioUrl = URL.createObjectURL(response.data);
+            const audio = new Audio(audioUrl);
+            
+            return new Promise((resolve) => {
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    resolve();
+                };
+                audio.onerror = () => {
+                    console.error("Audio Playback Error");
+                    resolve(); // 에러 시에도 흐름 유지
+                };
+                audio.play();
+            });
+        } catch (error) {
+            console.error('TTS API Error:', error);
+            // Fallback: 백엔드 실패 시 브라우저 기본 TTS (기존 로직 유지)
+            return new Promise((resolve) => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'ko-KR';
+                utterance.onend = resolve;
+                window.speechSynthesis.speak(utterance);
+            });
+        }
     };
 
-    const playScript = () => {
+    const playScript = async () => {
         let currentItem;
         if (!isLooping) {
             if (scriptIndex < currentCallConfig.intro_script.length) {
@@ -491,23 +509,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             currentItem = currentCallConfig.loop_script[scriptIndex++];
         }
+        
         if (currentItem) {
-            speak(currentItem.caller, currentCallConfig.gender);
             userLineEl.innerText = currentItem.user;
-            scriptTimeout = setTimeout(playScript, 6000);
+            // 음성 재생이 끝날 때까지 기다림
+            await speak(currentItem.caller, currentCallConfig.gender);
+            // 음성이 끝난 후 1.5초~3초 사이의 랜덤한 대기 시간을 두어 자연스러움 연출
+            const delay = 1500 + Math.random() * 1500;
+            scriptTimeout = setTimeout(playScript, delay);
         }
     };
 
     acceptBtn.addEventListener('click', () => {
-        if (window.speechSynthesis) {
-            const initUtterance = new SpeechSynthesisUtterance('');
-            initUtterance.volume = 0;
-            window.speechSynthesis.speak(initUtterance);
-        }
         incomingCall.classList.add('hidden');
         activeCall.classList.remove('hidden');
         startTimer();
-        setTimeout(playScript, 1000);
+        setTimeout(playScript, 500);
     });
 
     const terminateCall = () => {

@@ -110,15 +110,16 @@ def calculate_safety_score(current_lat, current_lng, facilities_data, radius=400
     """
     [핵심 기능 1] 주변 안전도 점수 계산 알고리즘
     현재 위치 기준 반경 radius(미터) 이내의 시설물을 분석하여 0~100점 사이의 점수와 등급을 반환합니다.
+    항상 100점이 나오지 않도록 상한선을 99.9로 제한하고 가중치를 현실적으로 조정했습니다.
     """
     weights = {
-        "CCTV": 6,       # 안심 CCTV 가점
-        "POLICE": 25,    # 파출소 가점
-        "STORE": 10,     # 안심 지킴이집 편의점 가점
-        "DANGER": -30    # 위험 구역 감점 요소
+        "CCTV": 4.5,       # 안심 CCTV 가점 (현실화)
+        "POLICE": 20.0,    # 파출소 가점
+        "STORE": 8.0,      # 안심 지킴이집 편의점 가점
+        "DANGER": -35.0    # 위험 구역 감점 요소 (강화)
     }
     
-    base_score = 60 
+    base_score = 55.0 # 기본 시작 점수 하향
     score_modifier = 0
     
     for facility in facilities_data:
@@ -133,11 +134,12 @@ def calculate_safety_score(current_lat, current_lng, facilities_data, radius=400
             score_modifier += weight * distance_factor
 
     final_score = base_score + score_modifier
-    final_score = max(0, min(100, final_score))
+    # 신빙성을 위해 99.9점을 최대로 제한
+    final_score = max(0, min(99.9, final_score))
     
-    if final_score >= 80:
+    if final_score >= 85:
         level = "매우 안전"
-    elif final_score >= 45:
+    elif final_score >= 50:
         level = "보통"
     else:
         level = "주의 필요"
