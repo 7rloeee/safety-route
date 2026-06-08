@@ -151,18 +151,28 @@ def generate_safe_waypoints(start_lat, start_lng, end_lat, end_lng, facilities_d
     CCTV, 가로등(인프라) 등의 위치를 바탕으로 인센티브 및 패널티 가중치를 부여하여
     가장 안전 점수가 높은(비용이 적은) 최적 우회 경로를 실시간으로 유도하여 반환합니다.
     """
-    # 1. 그래프 탐색을 위한 정점(노드) 풀 생성
-    # 출발점, 공공데이터 인프라 목록, 도착점을 순서대로 하나의 리스트로 통합
     nodes = [{"type": "START", "lat": start_lat, "lng": start_lng}]
     
-    # 성능 최적화: 출발지와 목적지 사이의 직선 거리를 계산하여 너무 먼 시설물은 필터링
-    max_radius = haversine_distance(start_lat, start_lng, end_lat, end_lng) + 1500 # 직선 거리 + 1.5km 이내만 고려
+    # 성능 최적화: 출발지와 목적지 사이의 직선 거리를 계산하여 너무 먼 시설물은 1차 필터링
+    direct_dist = haversine_distance(start_lat, start_lng, end_lat, end_lng)
+    max_radius = direct_dist + 1500 # 직선 거리 + 1.5km 이내만 고려
     
+    # 2차 필터링: 서버 과부하(502 Bad Gateway 등) 방지를 위해 노드 개수 엄격 제한
+    filtered_facilities = []
     for f in facilities_data:
-        # 시작점이나 끝점에서 너무 먼 시설물은 탐색에서 제외 (계산량 급감)
-        if haversine_distance(start_lat, start_lng, f["lat"], f["lng"]) <= max_radius or \
-           haversine_distance(end_lat, end_lng, f["lat"], f["lng"]) <= max_radius:
-            nodes.append(f)
+        # 출발점 또는 도착점과 가까운 시설물만 수집
+        d_start = haversine_distance(start_lat, start_lng, f["lat"], f["lng"])
+        d_end = haversine_distance(end_lat, end_lng, f["lat"], f["lng"])
+        
+        if d_start <= max_radius or d_end <= max_radius:
+            # 시설물이 경로 주변(타원형 범위)에 있는지 추가 확인하여 범위를 더 좁힘
+            if d_start + d_end <= direct_dist + 2000:
+                filtered_facilities.append((d_start + d_end, f))
+    
+    # 출발점+도착점 거리가 짧은 순으로 정렬하여 최대 250개까지만 노드로 편입
+    filtered_facilities.sort(key=lambda x: x[0])
+    for _, f in filtered_facilities[:250]:
+        nodes.append(f)
             
     nodes.append({"type": "GOAL", "lat": end_lat, "lng": end_lng})
     
