@@ -26,9 +26,14 @@ load_dotenv()
 # Gemini 클라이언트 초기화
 api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
+SAFEMAP_API_KEY = os.getenv("SAFEMAP_API_KEY")
 
 app = FastAPI(title="세이프티 루트 API 서버")
 security = HTTPBearer()
+
+@app.get("/api/safemap/key")
+async def get_safemap_key():
+    return {"key": SAFEMAP_API_KEY}
 
 async def get_current_user(db: Session = Depends(get_db), auth: HTTPAuthorizationCredentials = Depends(security)):
     token = auth.credentials
