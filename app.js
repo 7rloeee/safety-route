@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 경로 표시용 폴리라인 객체
     let routePolyline = null;
     let currentTargetCoords = null;
+    let lastScoreUpdate = 0;
 
     // 알림 중복 발송 방지를 위한 변수
     let lastNotifiedRegion = '';
