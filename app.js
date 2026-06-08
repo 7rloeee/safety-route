@@ -1106,19 +1106,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         const homeLocEl = document.getElementById('home-current-location');
                         if (homeLocEl) homeLocEl.innerText = addr;
                         
-                        // Update safety level text and color
-                        const safetyLevelEl = document.getElementById('safety-level');
-                        const homeSafetyLevelEl = document.getElementById('home-safety-level');
-                        const safetyText = '매우 안전';
-                        const safetyClass = 'safety-level-safe';
-                        
-                        if (safetyLevelEl) {
-                            safetyLevelEl.innerText = safetyText;
-                            safetyLevelEl.className = `value ${safetyClass}`;
-                        }
-                        if (homeSafetyLevelEl) {
-                            homeSafetyLevelEl.innerText = safetyText;
-                            homeSafetyLevelEl.style.color = 'var(--ios-green)'; // Applying direct style for Home tab as it doesn't have the same structure
+                        // --- 실제 안전도 데이터 연동 (Throttling: 10초마다 업데이트) ---
+                        const now = Date.now();
+                        if (now - lastScoreUpdate > 10000) {
+                            lastScoreUpdate = now;
+                            axios.post('/api/safety/score', { lat, lng })
+                                .then(res => {
+                                    const { score, level } = res.data;
+                                    const safetyLevelEl = document.getElementById('safety-level');
+                                    const homeSafetyLevelEl = document.getElementById('home-safety-level');
+                                    
+                                    // 점수에 따른 클래스 결정
+                                    let safetyClass = 'safety-level-normal';
+                                    if (level === '매우 안전') safetyClass = 'safety-level-safe';
+                                    else if (level === '주의 필요') safetyClass = 'safety-level-danger';
+
+                                    if (safetyLevelEl) {
+                                        safetyLevelEl.innerText = level;
+                                        safetyLevelEl.className = `value ${safetyClass}`;
+                                    }
+                                    if (homeSafetyLevelEl) {
+                                        homeSafetyLevelEl.innerText = level;
+                                        // 홈 탭은 직접 색상 지정
+                                        const colors = { '매우 안전': 'var(--ios-green)', '보통': '#FF9500', '주의 필요': 'var(--ios-red)' };
+                                        homeSafetyLevelEl.style.color = colors[level] || 'var(--ios-gray)';
+                                    }
+                                })
+                                .catch(err => console.error('Safety Score API Error:', err));
                         }
                     }
                 });
