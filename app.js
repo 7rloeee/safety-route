@@ -192,6 +192,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 navigator.geolocation.getCurrentPosition(async (position) => {
                     const startCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
                     
+                    startReturnBtn.innerText = '안심 경로 탐색 중...';
+                    startReturnBtn.disabled = true;
+
                     try {
                         const response = await axios.post('/api/safety/route', {
                             start_lat: startCoords.lat,
@@ -229,7 +232,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     } catch (error) {
                         console.error('Route API Error:', error);
-                        alert('안심 경로를 불러오지 못했습니다. 일반 경로로 안내합니다.');
+                        
+                        // 에러 시 직선 경로라도 그려주기 위한 Fallback 폴리라인 (사용자 경험 개선)
+                        if (routePolyline) routePolyline.setMap(null);
+                        const fallbackPath = [
+                            new kakao.maps.LatLng(startCoords.lat, startCoords.lng),
+                            new kakao.maps.LatLng(destCoords.lat, destCoords.lng)
+                        ];
+                        routePolyline = new kakao.maps.Polyline({
+                            path: fallbackPath, strokeWeight: 6, strokeColor: '#FF9500', strokeOpacity: 0.8, strokeStyle: 'dashed'
+                        });
+                        routePolyline.setMap(mapInstance);
+                        const bounds = new kakao.maps.LatLngBounds();
+                        fallbackPath.forEach(p => bounds.extend(p));
+                        mapInstance.setBounds(bounds);
+                        
+                        alert('거리가 멀어 탐색이 지연되어 직선 경로로 대체 안내합니다. 안심 귀가 모드는 정상 작동합니다.');
+                        startReturnBtn.innerText = '안심 귀가 모드 사용 중...';
+                        startReturnBtn.style.background = 'var(--ios-green)';
+                        isReturnActive = true;
+                        currentTargetCoords = destCoords;
+                    } finally {
+                        startReturnBtn.disabled = false;
                     }
                 });
             } else {

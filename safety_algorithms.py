@@ -154,8 +154,16 @@ def generate_safe_waypoints(start_lat, start_lng, end_lat, end_lng, facilities_d
     # 1. 그래프 탐색을 위한 정점(노드) 풀 생성
     # 출발점, 공공데이터 인프라 목록, 도착점을 순서대로 하나의 리스트로 통합
     nodes = [{"type": "START", "lat": start_lat, "lng": start_lng}]
+    
+    # 성능 최적화: 출발지와 목적지 사이의 직선 거리를 계산하여 너무 먼 시설물은 필터링
+    max_radius = haversine_distance(start_lat, start_lng, end_lat, end_lng) + 1500 # 직선 거리 + 1.5km 이내만 고려
+    
     for f in facilities_data:
-        nodes.append(f)
+        # 시작점이나 끝점에서 너무 먼 시설물은 탐색에서 제외 (계산량 급감)
+        if haversine_distance(start_lat, start_lng, f["lat"], f["lng"]) <= max_radius or \
+           haversine_distance(end_lat, end_lng, f["lat"], f["lng"]) <= max_radius:
+            nodes.append(f)
+            
     nodes.append({"type": "GOAL", "lat": end_lat, "lng": end_lng})
     
     num_nodes = len(nodes)
