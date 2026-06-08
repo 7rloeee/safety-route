@@ -967,7 +967,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Kakao Maps Logic ---
-    const API_KEY = '1d88eaa665348747e894a1849b949cf1';``
+    const API_KEY = '1d88eaa665348747e894a1849b949cf1';
     const mapScript = document.createElement('script');
     mapScript.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${API_KEY}&libraries=services&autoload=false`;
     document.head.appendChild(mapScript);

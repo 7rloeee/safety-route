@@ -12,7 +12,11 @@
     <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
     <script>
         if (typeof axios === 'undefined') {
-            window.axios = { post: () => Promise.resolve({ data: { reply: '서버 연결에 실패했습니다.' } }) };
+            window.axios = { 
+                post: () => Promise.resolve({ data: { reply: '서버 연결에 실패했습니다.' } }),
+                get: () => Promise.resolve({ data: [] }),
+                defaults: { headers: { common: {} } }
+            };
         }
     </script>
 </head>
