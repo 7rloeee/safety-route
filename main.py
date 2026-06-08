@@ -13,7 +13,7 @@ import models
 from database import engine, SessionLocal, get_db
 from sqlalchemy.orm import Session
 from auth_utils import verify_google_token, create_access_token, decode_access_token
-from safety_algorithms import load_public_data, calculate_safety_score, generate_safe_waypoints, fetch_police_stations_kakao
+from safety_algorithms import load_public_data, calculate_safety_score, generate_safe_waypoints, fetch_police_stations_kakao, haversine_distance
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import security_manager
 
@@ -390,11 +390,31 @@ async def fetch_optimized_safe_route(req: RouteRequestIn):
             req.end_lat, req.end_lng,
             combined_safety_data
         )
+
+        # 거리 및 예상 시간 계산
+        total_distance = 0
+        for i in range(len(optimized_path) - 1):
+            total_distance += haversine_distance(
+                optimized_path[i]["lat"], optimized_path[i]["lng"],
+                optimized_path[i+1]["lat"], optimized_path[i+1]["lng"]
+            )
+        
+        # 4km/h 기준 (약 66.6m/min)
+        estimated_time = max(1, round(total_distance / 66.6))
+        
+        # 경로 상의 평균 안전도 (경로 중간 지점 샘플링)
+        route_mid_idx = len(optimized_path) // 2
+        mid_point = optimized_path[route_mid_idx]
+        safety_analysis = calculate_safety_score(mid_point["lat"], mid_point["lng"], combined_safety_data)
+
         return {
             "status": "success",
             "total_nodes": len(optimized_path),
             "coordinates": optimized_path,
-            "police_found": len(police_data)
+            "police_found": len(police_data),
+            "distance": round(total_distance, 1),
+            "time": estimated_time,
+            "safety_score": safety_analysis["score"]
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"안심 경로 탐색 실패: {str(e)}")

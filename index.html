@@ -78,6 +78,17 @@
                     <span id="current-location">현재 위치를 확인 중입니다...</span>
                 </div>
             </header>
+            
+            <!-- 안심 경로 정보 카드 -->
+            <div id="route-info-card" class="location-card hidden" style="position: absolute; bottom: 180px; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; padding: 12px 20px; border-radius: 16px; background: rgba(255,255,255,0.95); z-index: 15; box-shadow: 0 4px 15px rgba(0,0,0,0.15); width: 85%; border: 1px solid var(--ios-blue);">
+                <div style="font-size: 15px; font-weight: 700; color: var(--ios-blue); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                    <i class="bi bi-shield-fill-check"></i> 안심 경로 <span id="route-safety-score" style="font-size: 14px; color: var(--ios-green);">(안전도 95%)</span>
+                </div>
+                <div style="font-size: 13px; color: #555; font-weight: 500;">
+                    <span id="route-distance">0.0km</span> | 예상시간 <span id="route-time">0분</span> (도보 기준)
+                </div>
+            </div>
+
             <main id="map-container">
                 <div id="map"></div>
             </main>

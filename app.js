@@ -23,6 +23,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const freqDestList = document.getElementById('frequent-destinations-list');
     const searchNewDestBtn = document.getElementById('search-new-dest-btn');
     const closeDestModalBtn = document.getElementById('close-dest-modal-btn');
+    
+    // UI Elements - Route Info Card
+    const routeInfoCard = document.getElementById('route-info-card');
+    const routeSafetyScoreEl = document.getElementById('route-safety-score');
+    const routeDistanceEl = document.getElementById('route-distance');
+    const routeTimeEl = document.getElementById('route-time');
 
     // UI Elements - Safe Call View
     const chips = document.querySelectorAll('.chip');
@@ -229,6 +235,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         startReturnBtn.style.background = 'var(--ios-green)';
                         isReturnActive = true;
                         currentTargetCoords = destCoords;
+                        
+                        // 경로 정보 표시
+                        if (routeInfoCard) {
+                            routeSafetyScoreEl.innerText = `(안전도 ${response.data.safety_score}%)`;
+                            routeDistanceEl.innerText = `${(response.data.distance / 1000).toFixed(1)}km`;
+                            routeTimeEl.innerText = `${response.data.time}분`;
+                            routeInfoCard.classList.remove('hidden');
+                        }
 
                     } catch (error) {
                         console.error('Route API Error:', error);
@@ -252,6 +266,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         startReturnBtn.style.background = 'var(--ios-green)';
                         isReturnActive = true;
                         currentTargetCoords = destCoords;
+
+                        // 폴백 시에도 대략적인 정보 표시
+                        if (routeInfoCard) {
+                            const directDist = Math.sqrt(Math.pow(startCoords.lat - destCoords.lat, 2) + Math.pow(startCoords.lng - destCoords.lng, 2)) * 111000;
+                            routeSafetyScoreEl.innerText = '(분석 지연)';
+                            routeDistanceEl.innerText = `${(directDist / 1000).toFixed(1)}km`;
+                            routeTimeEl.innerText = `${Math.round(directDist / 66.6)}분`;
+                            routeInfoCard.classList.remove('hidden');
+                        }
                     } finally {
                         startReturnBtn.disabled = false;
                     }
@@ -283,6 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     routePolyline.setMap(null);
                     routePolyline = null;
                 }
+                if (routeInfoCard) routeInfoCard.classList.add('hidden');
                 alert('안심 귀가 모드가 종료되었습니다.');
                 startReturnBtn.innerText = '안심 귀가 시작';
                 startReturnBtn.style.background = 'var(--ios-blue)';
