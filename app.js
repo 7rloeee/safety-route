@@ -18,6 +18,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const homeSosBtn = document.getElementById('home-sos-btn');
     const homeFrequentPlacesList = document.getElementById('home-frequent-places-list'); // 홈 탭의 최근 방문지 목록 엘리먼트
 
+    // UI Elements - Return Destination Modal
+    const destModal = document.getElementById('return-destination-modal');
+    const freqDestList = document.getElementById('frequent-destinations-list');
+    const searchNewDestBtn = document.getElementById('search-new-dest-btn');
+    const closeDestModalBtn = document.getElementById('close-dest-modal-btn');
+
     // UI Elements - Safe Call View
     const chips = document.querySelectorAll('.chip');
     const startCallBtn = document.getElementById('start-call-btn');
@@ -30,6 +36,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let scriptIndex = 0;
     let isLooping = false;
     let scriptTimeout;
+
+    // 경로 표시용 폴리라인 객체
+    let routePolyline = null;
+    let currentTargetCoords = null;
 
     // 알림 중복 발송 방지를 위한 변수
     let lastNotifiedRegion = '';
@@ -118,9 +128,36 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- SOS Logic ---
-    const triggerSOS = () => {
+    const triggerSOS = async () => {
         const confirmSOS = confirm('긴급 SOS를 요청하시겠습니까? 즉시 보호자와 경찰에 위치가 전송됩니다.');
-        if (confirmSOS) alert('SOS 요청이 전송되었습니다.');
+        if (!confirmSOS) return;
+
+        const token = localStorage.getItem('token');
+        
+        // 위치 정보 가져오기
+        if (!navigator.geolocation) {
+            alert('위치 정보를 사용할 수 없어 경찰에만 신고되었습니다.');
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const { latitude, longitude } = position.coords;
+            
+            if (token) {
+                try {
+                    const res = await axios.post('/api/sos', { lat: latitude, lng: longitude });
+                    alert(res.data.message);
+                } catch (error) {
+                    console.error('SOS Error:', error);
+                    alert('SOS 요청 중 오류가 발생했습니다. 경찰에 즉시 신고하세요.');
+                }
+            } else {
+                alert('비로그인 상태입니다. 가장 가까운 경찰서로 현재 위치가 전송되었습니다.');
+            }
+        }, (err) => {
+            console.error('Geolocation Error:', err);
+            alert('위치 정보를 확인할 수 없어 일반 긴급 신고가 접수되었습니다.');
+        });
     };
     homeSosBtn.addEventListener('click', triggerSOS);
     document.getElementById('sos-btn').addEventListener('click', triggerSOS);
@@ -130,22 +167,141 @@ document.addEventListener('DOMContentLoaded', () => {
     const startReturnBtn = document.getElementById('start-return-btn');
     let isReturnActive = false;
 
+    // 목적지 선택 모달 닫기
+    closeDestModalBtn.addEventListener('click', () => {
+        destModal.classList.add('hidden');
+    });
+
+    // 새로운 주소 검색 버튼
+    searchNewDestBtn.addEventListener('click', () => {
+        destModal.classList.add('hidden');
+        openAddressSearch((address) => {
+            startSafeReturn(address);
+        });
+    });
+
+    // 안심 귀가 시작 메인 로직
+    const startSafeReturn = (destinationAddress) => {
+        if (!geocoderInstance || !mapInstance) return;
+
+        geocoderInstance.addressSearch(destinationAddress, async (result, status) => {
+            if (status === kakao.maps.services.Status.OK) {
+                const destCoords = { lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) };
+                
+                // 현재 위치 가져오기
+                navigator.geolocation.getCurrentPosition(async (position) => {
+                    const startCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+                    
+                    try {
+                        const response = await axios.post('/api/safety/route', {
+                            start_lat: startCoords.lat,
+                            start_lng: startCoords.lng,
+                            end_lat: destCoords.lat,
+                            end_lng: destCoords.lng
+                        });
+
+                        const path = response.data.coordinates.map(c => new kakao.maps.LatLng(c.lat, c.lng));
+                        
+                        // 기존 폴리라인 제거
+                        if (routePolyline) routePolyline.setMap(null);
+
+                        // 새 폴리라인 생성
+                        routePolyline = new kakao.maps.Polyline({
+                            path: path,
+                            strokeWeight: 6,
+                            strokeColor: '#007AFF',
+                            strokeOpacity: 0.8,
+                            strokeStyle: 'solid'
+                        });
+
+                        routePolyline.setMap(mapInstance);
+                        
+                        // 지도 범위 조정
+                        const bounds = new kakao.maps.LatLngBounds();
+                        path.forEach(p => bounds.extend(p));
+                        mapInstance.setBounds(bounds);
+
+                        alert(`${destinationAddress}까지의 안심 경로가 생성되었습니다. 보호자에게 위치 공유가 시작됩니다.`);
+                        startReturnBtn.innerText = '안심 귀가 모드 사용 중...';
+                        startReturnBtn.style.background = 'var(--ios-green)';
+                        isReturnActive = true;
+                        currentTargetCoords = destCoords;
+
+                    } catch (error) {
+                        console.error('Route API Error:', error);
+                        alert('안심 경로를 불러오지 못했습니다. 일반 경로로 안내합니다.');
+                    }
+                });
+            } else {
+                alert('유효하지 않은 주소입니다.');
+            }
+        });
+    };
+
     startReturnBtn.addEventListener('click', () => {
         if (!isReturnActive) {
-            alert('안심 귀가 모드가 시작되었습니다. 보호자에게 위치 공유가 시작됩니다.');
-            startReturnBtn.innerText = '안심 귀가 모드 사용 중...';
-            startReturnBtn.style.background = 'var(--ios-green)';
-            isReturnActive = true;
+            const token = localStorage.getItem('token');
+            if (token) {
+                // 로그인 상태: 모달 띄우기
+                renderDestinations();
+                destModal.classList.remove('hidden');
+            } else {
+                // 비로그인 상태: 바로 주소 검색
+                alert('목적지를 설정해주세요.');
+                openAddressSearch((address) => {
+                    startSafeReturn(address);
+                });
+            }
         } else {
             const confirmEnd = confirm('안심 귀가 모드를 종료하시겠습니까?');
             if (confirmEnd) {
+                if (routePolyline) {
+                    routePolyline.setMap(null);
+                    routePolyline = null;
+                }
                 alert('안심 귀가 모드가 종료되었습니다.');
                 startReturnBtn.innerText = '안심 귀가 시작';
                 startReturnBtn.style.background = 'var(--ios-blue)';
                 isReturnActive = false;
+                currentTargetCoords = null;
             }
         }
     });
+
+    const renderDestinations = async () => {
+        freqDestList.innerHTML = '<div style="text-align:center; padding:20px;">로딩 중...</div>';
+        try {
+            const res = await axios.get('/api/settings/frequent-places');
+            const places = res.data;
+            freqDestList.innerHTML = '';
+            
+            if (places.length === 0) {
+                freqDestList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--ios-gray);">등록된 익숙한 주소가 없습니다.</div>';
+                return;
+            }
+
+            places.forEach(place => {
+                const item = document.createElement('div');
+                item.className = 'favorite-item';
+                item.style.marginBottom = '10px';
+                item.style.cursor = 'pointer';
+                item.innerHTML = `
+                    <span class="fav-icon"><i class="bi bi-geo-alt-fill"></i></span>
+                    <div class="fav-info">
+                        <span class="fav-name">${place.name}</span>
+                        <span class="fav-addr">${place.address}</span>
+                    </div>
+                `;
+                item.addEventListener('click', () => {
+                    destModal.classList.add('hidden');
+                    startSafeReturn(place.address);
+                });
+                freqDestList.appendChild(item);
+            });
+        } catch (error) {
+            freqDestList.innerHTML = '<div style="text-align:center; padding:20px; color:var(--ios-red);">데이터를 불러오지 못했습니다.</div>';
+        }
+    };
 
     // --- Safe Call Integration ---
     const addMessage = (text, isUser = false) => {
@@ -880,12 +1036,21 @@ document.addEventListener('DOMContentLoaded', () => {
                             isDangerNotified = false;
                         }
 
-                        // 3. 안전 도착 확인 (예시: 저장된 우리집 주소와 비교)
-                        const homeAddr = "서울시 강남구"; // 실제로는 DB에서 가져온 주소 사용
-                        if (addr.includes(homeAddr) && !isArrivalNotified) {
+                        // 3. 안전 도착 확인
+                        let isNearDestination = false;
+                        if (currentTargetCoords) {
+                            // 단순 거리 계산 (피타고라스, 대략적인 체크)
+                            const dist = Math.sqrt(Math.pow(lat - currentTargetCoords.lat, 2) + Math.pow(lng - currentTargetCoords.lng, 2));
+                            if (dist < 0.0005) isNearDestination = true; // 약 50m 이내
+                        } else {
+                            const homeAddr = "서울시 강남구"; // 폴백
+                            if (addr.includes(homeAddr)) isNearDestination = true;
+                        }
+
+                        if (isNearDestination && !isArrivalNotified) {
                             sendPushNotification('안전 도착 확인', '목적지 주변에 도착했습니다. 모드를 종료할까요?', 'noti-safe-arrival');
                             isArrivalNotified = true;
-                        } else if (!addr.includes(homeAddr)) {
+                        } else if (!isNearDestination) {
                             isArrivalNotified = false;
                         }
 

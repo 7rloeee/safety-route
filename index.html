@@ -248,6 +248,21 @@
             </button>
         </nav>
 
+        <!-- 안심귀가 목적지 선택 모달 -->
+        <div id="return-destination-modal" class="modal-overlay hidden" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(5px);">
+            <div class="bottom-sheet" style="bottom: 0; transform: none; height: auto; max-height: 80dvh; display: flex; flex-direction: column;">
+                <div class="drag-handle"></div>
+                <div class="section-title">목적지 설정</div>
+                <div id="frequent-destinations-list" class="settings-group-list" style="overflow-y: auto; flex: 1;">
+                    <!-- 로그인 상태일 때 익숙한 주소가 여기에 렌더링됨 -->
+                </div>
+                <button id="search-new-dest-btn" class="primary-btn" style="margin-top: 10px;">
+                    <i class="bi bi-search"></i> 새로운 주소 검색
+                </button>
+                <button id="close-dest-modal-btn" class="text-btn" style="margin-top: 15px; width: 100%; text-align: center; color: var(--ios-gray);">취소</button>
+            </div>
+        </div>
+
         <!-- 주소 검색 레이어 -->
         <div id="address-search-layer" class="hidden">
             <div class="address-layer-header">

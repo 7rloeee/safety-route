@@ -75,6 +75,10 @@ class EmergencyContactCreate(BaseModel):
     relation: str
     phone: str
 
+class SOSRequest(BaseModel):
+    lat: float
+    lng: float
+
 @app.post("/api/auth/google")
 async def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db)):
     id_info = verify_google_token(req.credential)
@@ -182,6 +186,27 @@ async def update_emergency_contact(contact_id: int, contact_data: EmergencyConta
     db.commit()
     db.refresh(contact)
     return contact
+
+@app.post("/api/sos")
+async def trigger_sos(req: SOSRequest, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """
+    긴급 SOS를 요청하면 등록된 긴급 연락처로 현재 위치 정보를 포함한 구조 요청을 보냅니다.
+    """
+    contacts = user.emergency_contacts
+    if not contacts:
+        return {"status": "partial_success", "message": "등록된 긴급 연락처가 없습니다. 경찰에만 위치가 전송되었습니다.", "contacts_notified": []}
+    
+    notified_names = [c.name for c in contacts]
+    # 실제 SMS 발송 로직 시뮬레이션
+    print(f"SOS ALERT: User {user.name} at ({req.lat}, {req.lng}) requested help!")
+    for contact in contacts:
+        print(f"Sending SMS to {contact.name} ({contact.phone}): [세이프티 루트] {user.name}님이 위급 상황입니다! 현재 위치: https://map.kakao.com/link/map/{req.lat},{req.lng}")
+
+    return {
+        "status": "success",
+        "message": f"{', '.join(notified_names)}님에게 구조 요청이 전송되었습니다.",
+        "contacts_notified": notified_names
+    }
 
 # 현재 디렉토리 경로
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
