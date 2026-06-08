@@ -27,9 +27,53 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 SAFEMAP_API_KEY = os.getenv("SAFEMAP_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 app = FastAPI(title="세이프티 루트 API 서버")
 security = HTTPBearer()
+
+class TTSRequest(BaseModel):
+    text: str
+    gender: str  # 'male' or 'female'
+
+@app.post("/api/tts")
+async def generate_tts(req: TTSRequest):
+    """
+    ElevenLabs API를 호출하여 텍스트를 고품질 AI 음성으로 변환합니다.
+    """
+    if not ELEVENLABS_API_KEY:
+        raise HTTPException(status_code=500, detail="ElevenLabs API Key가 설정되지 않았습니다.")
+
+    # 기본 Voice ID 설정 (ElevenLabs 기본 제공 목소리)
+    # 남성: Adam (pNInz6obpguXGOic9J5L), 여성: Bella (EXAVITQu4vr4xnSDxMaL)
+    voice_id = "pNInz6obpguXGOic9J5L" if req.gender == "male" else "EXAVITQu4vr4xnSDxMaL"
+    
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    data = {
+        "text": req.text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+            "style": 0.0,
+            "use_speaker_boost": True
+        }
+    }
+
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            return Response(content=response.content, media_type="audio/mpeg")
+        else:
+            print(f"ElevenLabs API Error: {response.text}")
+            raise HTTPException(status_code=response.status_code, detail="음성 생성 실패")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/safemap/key")
 async def get_safemap_key():
