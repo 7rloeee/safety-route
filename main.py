@@ -30,6 +30,7 @@ api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 SAFEMAP_API_KEY = os.getenv("SAFEMAP_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+TMAP_API_KEY = os.getenv("TMAP_API_KEY")
 
 app = FastAPI(title="세이프티 루트 API 서버")
 security = HTTPBearer()
@@ -438,45 +439,105 @@ async def fetch_optimized_safe_route(req: RouteRequestIn):
     """
     출발지와 목적지 좌표를 받아 위험 구역을 우회하고 
     안전 인프라(CCTV, 파출소 등)를 경유하는 안심 웨이포인트 배열을 반환합니다.
+    TMAP 보행자 API를 연동하여 실제 인도/골목길을 따라 경로를 생성합니다.
     """
     try:
-        # 경로 중간 지점을 기준으로 주변 경찰서 검색 (반경 3km)
+        # 1. 우리 알고리즘으로 안전한 경유지들을 먼저 계산 (Dijkstra)
         mid_lat = (req.start_lat + req.end_lat) / 2
         mid_lng = (req.start_lng + req.end_lng) / 2
         police_data = fetch_police_stations_kakao(mid_lat, mid_lng, radius=3000)
-        
         combined_safety_data = SAFETY_DATA + police_data
 
-        optimized_path = generate_safe_waypoints(
+        dijkstra_path = generate_safe_waypoints(
             req.start_lat, req.start_lng,
             req.end_lat, req.end_lng,
             combined_safety_data
         )
 
-        # 거리 및 예상 시간 계산
-        total_distance = 0
-        for i in range(len(optimized_path) - 1):
-            total_distance += haversine_distance(
-                optimized_path[i]["lat"], optimized_path[i]["lng"],
-                optimized_path[i+1]["lat"], optimized_path[i+1]["lng"]
-            )
-        
-        # 4km/h 기준 (약 66.6m/min)
-        estimated_time = max(1, round(total_distance / 66.6))
-        
-        # 경로 상의 평균 안전도 (경로 중간 지점 샘플링)
-        route_mid_idx = len(optimized_path) // 2
-        mid_point = optimized_path[route_mid_idx]
+        # 2. TMAP 보행자 API 연동 (실제 인도 반영)
+        if TMAP_API_KEY and len(dijkstra_path) > 1:
+            try:
+                # TMAP passList 제한(최대 5개)에 맞춰 경유지 샘플링
+                pass_list = []
+                if len(dijkstra_path) > 2:
+                    # 시작과 끝을 제외한 중간 지점들 중 최대 5개를 균등 추출
+                    intermediates = dijkstra_path[1:-1]
+                    step = max(1, len(intermediates) // 5)
+                    sampled = intermediates[::step][:5]
+                    pass_list = [f"{p['lng']},{p['lat']}" for p in sampled]
+
+                tmap_url = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json&callback=result"
+                payload = {
+                    "startX": req.start_lng,
+                    "startY": req.start_lat,
+                    "endX": req.end_lng,
+                    "endY": req.end_lat,
+                    "passList": "_".join(pass_list) if pass_list else None,
+                    "reqCoordType": "WGS84GEO",
+                    "resCoordType": "WGS84GEO",
+                    "startName": "출발지",
+                    "endName": "목적지"
+                }
+                headers = {
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                    "appKey": TMAP_API_KEY
+                }
+
+                tmap_res = requests.post(tmap_url, json=payload, headers=headers, timeout=5)
+                if tmap_res.status_code == 200:
+                    tmap_data = tmap_res.json()
+                    street_path = []
+                    for feature in tmap_data.get("features", []):
+                        if feature["geometry"]["type"] == "LineString":
+                            # TMAP은 [lng, lat] 순서로 좌표를 주므로 [lat, lng]로 변환
+                            for coord in feature["geometry"]["coordinates"]:
+                                # 중복 좌표 방지
+                                point = {"lat": float(coord[1]), "lng": float(coord[0])}
+                                if not street_path or street_path[-1] != point:
+                                    street_path.append(point)
+
+                    if street_path:
+                        # TMAP 성공 시 실제 도로 경로 사용
+                        final_path = street_path
+                        # TMAP 결과에서 거리/시간 정보 추출
+                        properties = tmap_data["features"][0]["properties"]
+                        total_distance = float(properties.get("totalDistance", 0))
+                        estimated_time = round(float(properties.get("totalTime", 0)) / 60)
+                    else:
+                        final_path = dijkstra_path
+                else:
+                    print(f"TMAP API Error: {tmap_res.status_code} - {tmap_res.text}")
+                    final_path = dijkstra_path
+            except Exception as te:
+                print(f"TMAP Integration Error: {te}")
+                final_path = dijkstra_path
+        else:
+            final_path = dijkstra_path
+
+        # 3. 거리 및 예상 시간 계산 (TMAP 실패 시 Fallback)
+        if 'total_distance' not in locals():
+            total_distance = 0
+            for i in range(len(final_path) - 1):
+                total_distance += haversine_distance(
+                    final_path[i]["lat"], final_path[i]["lng"],
+                    final_path[i+1]["lat"], final_path[i+1]["lng"]
+                )
+            estimated_time = max(1, round(total_distance / 66.6))
+
+        # 4. 경로 상의 평균 안전도
+        route_mid_idx = len(final_path) // 2
+        mid_point = final_path[route_mid_idx]
         safety_analysis = calculate_safety_score(mid_point["lat"], mid_point["lng"], combined_safety_data)
 
         return {
             "status": "success",
-            "total_nodes": len(optimized_path),
-            "coordinates": optimized_path,
-            "police_found": len(police_data),
+            "total_nodes": len(final_path),
+            "coordinates": final_path,
             "distance": round(total_distance, 1),
             "time": estimated_time,
             "safety_score": safety_analysis["score"]
         }
     except Exception as e:
+        print(f"Route API Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"안심 경로 탐색 실패: {str(e)}")
