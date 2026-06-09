@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Response, Depends
 from fastapi.staticfiles import StaticFiles

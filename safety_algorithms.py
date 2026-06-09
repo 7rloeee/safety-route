@@ -171,9 +171,9 @@ def generate_safe_waypoints(start_lat, start_lng, end_lat, end_lng, facilities_d
             if d_start + d_end <= direct_dist + 2000:
                 filtered_facilities.append((d_start + d_end, f))
     
-    # 출발점+도착점 거리가 짧은 순으로 정렬하여 최대 250개까지만 노드로 편입
+    # 출발점+도착점 거리가 짧은 순으로 정렬하여 최대 150개까지만 노드로 편입
     filtered_facilities.sort(key=lambda x: x[0])
-    for _, f in filtered_facilities[:250]:
+    for _, f in filtered_facilities[:150]:
         nodes.append(f)
             
     nodes.append({"type": "GOAL", "lat": end_lat, "lng": end_lng})
