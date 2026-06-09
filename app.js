@@ -595,6 +595,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Google Auth Integration ---
     const GOOGLE_CLIENT_ID = '856701298539-nekcpffj1mc9aa4p890defc5r0k8upff.apps.googleusercontent.com';
+
+    // Axios 전역 에러 핸들러 (Interceptor) 추가
+    axios.interceptors.response.use(
+        response => response,
+        error => {
+            if (error.response && error.response.status === 401) {
+                // 토큰이 만료되었거나 유효하지 않은 경우
+                console.warn('세션이 만료되어 로그아웃 처리됩니다.');
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                delete axios.defaults.headers.common['Authorization'];
+                updateAuthUI(null);
+            }
+            return Promise.reject(error);
+        }
+    );
+
     const loginSection = document.getElementById('login-section');
     const userProfileSection = document.getElementById('user-profile-section');
     const userNameEl = document.getElementById('user-name');
