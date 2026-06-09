@@ -521,8 +521,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     acceptBtn.addEventListener('click', () => {
+        // Unlock audio context for mobile browsers (TTS fix)
+        const unlockUtterance = new SpeechSynthesisUtterance('');
+        window.speechSynthesis.speak(unlockUtterance);
+
         incomingCall.classList.add('hidden');
         activeCall.classList.remove('hidden');
+        
+        // Reset call state
+        seconds = 0;
+        callTimer.innerText = '00:00';
+        
         startTimer();
         setTimeout(playScript, 500);
     });
@@ -540,6 +549,9 @@ document.addEventListener('DOMContentLoaded', () => {
     endCallBtn.addEventListener('click', terminateCall);
 
     function startTimer() {
+        // Clear any existing interval to prevent multiple timers running at once
+        if (timerInterval) clearInterval(timerInterval);
+        
         timerInterval = setInterval(() => {
             seconds++;
             const mins = String(Math.floor(seconds / 60)).padStart(2, '0');

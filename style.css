@@ -582,6 +582,16 @@ input:checked + .slider:before { transform: translateX(20px); }
 }
 
 
+.primary-btn, .sos-block-btn, .circle-btn, .circle-btn-small, .nav-item, .chip, .add-btn-small, .text-btn, .save-btn-small, .fab-btn, #chat-send-btn, .edit-btn-text, .delete-btn-text {
+    transition: opacity 0.1s ease, filter 0.1s ease, transform 0.1s ease;
+}
+
+.primary-btn:active, .sos-block-btn:active, .circle-btn:active, .circle-btn-small:active, .nav-item:active, .chip:active, .add-btn-small:active, .text-btn:active, .save-btn-small:active, .fab-btn:active, #chat-send-btn:active, .edit-btn-text:active, .delete-btn-text:active {
+    opacity: 0.7;
+    filter: brightness(0.9);
+    transform: scale(0.98); /* Add a very subtle scale as well for a more "pressed" feel */
+}
+
 .primary-btn { width: 100%; background: var(--ios-blue); color: white; border: none; padding: 16px; border-radius: 14px; font-size: 17px; font-weight: 600; }
 .sos-btn-large { background: var(--ios-red) !important; margin-top: 10px; display: none; font-size: 24px !important; border-radius: 20px !important; }
 .bottom-sheet.expanded .sos-btn-large { display: block; }
