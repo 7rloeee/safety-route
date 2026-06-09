@@ -16,6 +16,7 @@ from auth_utils import verify_google_token, create_access_token, decode_access_t
 from safety_algorithms import load_public_data, calculate_safety_score, generate_safe_waypoints, fetch_police_stations_kakao, haversine_distance
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import security_manager
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # 데이터베이스 초기화
 models.Base.metadata.create_all(bind=engine)
@@ -31,6 +32,17 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 app = FastAPI(title="세이프티 루트 API 서버")
 security = HTTPBearer()
+
+# 보안 헤더 미들웨어 추가 (Google 로그인 COOP 에러 해결)
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # Google 로그인이 팝업창과 통신할 수 있도록 허용
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 class TTSRequest(BaseModel):
     text: str
