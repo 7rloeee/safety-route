@@ -666,6 +666,13 @@ document.addEventListener('DOMContentLoaded', () => {
             renderEmergencyContacts(contactsRes.data);
         } catch (error) {
             console.error('Failed to load settings:', error);
+            // 만약 토큰이 만료되었거나 유효하지 않아 401 에러가 발생하면 로그아웃 처리
+            if (error.response && error.response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                delete axios.defaults.headers.common['Authorization'];
+                updateAuthUI(null);
+            }
         }
     };
 
@@ -1001,7 +1008,6 @@ document.addEventListener('DOMContentLoaded', () => {
         axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
         updateAuthUI(JSON.parse(savedUser));
     }
-    loadSettings(); // 앱 초기 로드 시에도 설정 데이터를 불러옵니다.
 
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('token');
